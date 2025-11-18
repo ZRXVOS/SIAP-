@@ -1,0 +1,170 @@
+//@version=6
+strategy("XAUUSD Pure Supertrend - Simple & Profitable",
+         shorttitle="ST Pure",
+         overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=100,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2,
+         pyramiding=0)
+
+// ============================================================================
+// 🎯 CORE SETTINGS - SUPERTREND ONLY
+// ============================================================================
+
+// Supertrend Parameters
+atrPeriod = input.int(10, "ATR Period", minval=1, maxval=50, group="Supertrend Settings")
+atrMultiplier = input.float(3.0, "ATR Multiplier", minval=0.5, maxval=10.0, step=0.1, group="Supertrend Settings")
+
+// Trade Direction
+allowLong = input.bool(true, "Allow Long Positions", group="Trade Direction")
+allowShort = input.bool(true, "Allow Short Positions", group="Trade Direction")
+
+// Risk Management
+useStopLoss = input.bool(true, "Use Stop Loss", group="Risk Management")
+stopLossPercent = input.float(2.0, "Stop Loss %", minval=0.1, step=0.1, group="Risk Management")
+useTakeProfit = input.bool(true, "Use Take Profit", group="Risk Management")
+takeProfitPercent = input.float(4.0, "Take Profit %", minval=0.1, step=0.1, group="Risk Management")
+
+// Exit Options
+exitOnOpposite = input.bool(true, "Exit on Opposite Signal", group="Exit Settings", tooltip="Close position when Supertrend reverses")
+
+// Display
+showDashboard = input.bool(true, "Show Performance Dashboard", group="Display")
+showSignals = input.bool(true, "Show Entry Signals", group="Display")
+
+// ============================================================================
+// 📊 SUPERTREND CALCULATION
+// ============================================================================
+
+[supertrend, direction] = ta.supertrend(atrMultiplier, atrPeriod)
+
+// Trend detection
+isBullish = direction < 0
+isBearish = direction > 0
+
+// Signal detection (Supertrend flip)
+bullishSignal = ta.change(direction) < 0
+bearishSignal = ta.change(direction) > 0
+
+// ============================================================================
+// 🎯 ENTRY CONDITIONS - PURE SUPERTREND
+// ============================================================================
+
+longCondition = allowLong and bullishSignal and strategy.position_size == 0
+shortCondition = allowShort and bearishSignal and strategy.position_size == 0
+
+// ============================================================================
+// 💼 POSITION MANAGEMENT
+// ============================================================================
+
+// Entry
+if longCondition
+    strategy.entry("Long", strategy.long)
+
+if shortCondition
+    strategy.entry("Short", strategy.short)
+
+// Stop Loss & Take Profit
+if strategy.position_size > 0
+    if useStopLoss
+        strategy.exit("SL Long", "Long", stop=strategy.position_avg_price * (1 - stopLossPercent / 100))
+    if useTakeProfit
+        strategy.exit("TP Long", "Long", limit=strategy.position_avg_price * (1 + takeProfitPercent / 100))
+
+if strategy.position_size < 0
+    if useStopLoss
+        strategy.exit("SL Short", "Short", stop=strategy.position_avg_price * (1 + stopLossPercent / 100))
+    if useTakeProfit
+        strategy.exit("TP Short", "Short", limit=strategy.position_avg_price * (1 - takeProfitPercent / 100))
+
+// Exit on opposite signal
+if exitOnOpposite
+    if bearishSignal and strategy.position_size > 0
+        strategy.close("Long", comment="Supertrend Reversal")
+    if bullishSignal and strategy.position_size < 0
+        strategy.close("Short", comment="Supertrend Reversal")
+
+// ============================================================================
+// 🎨 PLOTTING
+// ============================================================================
+
+// Supertrend Line
+plot(isBullish ? supertrend : na, "Supertrend Up", color=color.new(color.lime, 0), linewidth=3, style=plot.style_line)
+plot(isBearish ? supertrend : na, "Supertrend Down", color=color.new(color.red, 0), linewidth=3, style=plot.style_line)
+
+// Entry Signals
+plotshape(showSignals and longCondition, "Long Signal", shape.triangleup, location.belowbar, color=color.new(color.lime, 0), size=size.normal, text="LONG")
+plotshape(showSignals and shortCondition, "Short Signal", shape.triangledown, location.abovebar, color=color.new(color.red, 0), size=size.normal, text="SHORT")
+
+// Background color for trend
+bgcolor(isBullish ? color.new(color.lime, 97) : color.new(color.red, 97), title="Trend Background")
+
+// ============================================================================
+// 📊 PERFORMANCE DASHBOARD
+// ============================================================================
+
+if showDashboard and barstate.islast
+    var table dashboard = table.new(position.top_right, 2, 10, bgcolor=color.new(color.black, 85), border_width=2, border_color=color.new(color.gray, 50))
+
+    // Header
+    table.cell(dashboard, 0, 0, "📊 PERFORMANCE", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.normal)
+    table.cell(dashboard, 1, 0, "", bgcolor=color.new(color.blue, 70))
+
+    // Win Rate
+    winRate = strategy.closedtrades > 0 ? strategy.wintrades / strategy.closedtrades * 100 : 0
+    winRateColor = winRate >= 45 ? color.lime : winRate >= 35 ? color.yellow : color.red
+    table.cell(dashboard, 0, 1, "Win Rate", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 1, str.tostring(winRate, "#.##") + "%", text_color=winRateColor, text_size=size.small)
+
+    // Profit Factor
+    profitFactor = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : 0
+    pfColor = profitFactor >= 1.5 ? color.lime : profitFactor >= 1.0 ? color.yellow : color.red
+    table.cell(dashboard, 0, 2, "Profit Factor", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 2, str.tostring(profitFactor, "#.##"), text_color=pfColor, text_size=size.small)
+
+    // Total Trades
+    table.cell(dashboard, 0, 3, "Total Trades", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 3, str.tostring(strategy.closedtrades), text_color=color.white, text_size=size.small)
+
+    // Win/Loss
+    table.cell(dashboard, 0, 4, "Wins / Losses", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 4, str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), text_color=color.white, text_size=size.small)
+
+    // Net Profit
+    netProfitM = strategy.netprofit / 1000000
+    netProfitColor = strategy.netprofit > 0 ? color.lime : color.red
+    table.cell(dashboard, 0, 5, "Net Profit", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 5, str.tostring(netProfitM, "#,###.##") + " M", text_color=netProfitColor, text_size=size.small)
+
+    // Net Profit %
+    netProfitPct = (strategy.netprofit / strategy.initial_capital) * 100
+    table.cell(dashboard, 0, 6, "Profit %", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 6, str.tostring(netProfitPct, "#.##") + "%", text_color=netProfitColor, text_size=size.small)
+
+    // Max Drawdown
+    maxDD = strategy.max_drawdown / strategy.initial_capital * 100
+    ddColor = maxDD < 10 ? color.lime : maxDD < 20 ? color.yellow : color.red
+    table.cell(dashboard, 0, 7, "Max DD", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 7, str.tostring(maxDD, "#.##") + "%", text_color=ddColor, text_size=size.small)
+
+    // Current Trend
+    table.cell(dashboard, 0, 8, "Trend", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 8, isBullish ? "BULL ▲" : "BEAR ▼", text_color=isBullish ? color.lime : color.red, text_size=size.small)
+
+    // Current Position
+    posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "NONE"
+    posColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(dashboard, 0, 9, "Position", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 9, posText, text_color=posColor, text_size=size.small)
+
+// ============================================================================
+// 🔔 ALERTS
+// ============================================================================
+
+alertcondition(longCondition, "🟢 LONG Entry", "XAUUSD LONG - Supertrend Bullish")
+alertcondition(shortCondition, "🔴 SHORT Entry", "XAUUSD SHORT - Supertrend Bearish")
+alertcondition(bearishSignal and strategy.position_size > 0, "⚠️ Exit Long", "Close LONG - Supertrend Reversed")
+alertcondition(bullishSignal and strategy.position_size < 0, "⚠️ Exit Short", "Close SHORT - Supertrend Reversed")
