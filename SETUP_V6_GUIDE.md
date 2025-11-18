@@ -17,6 +17,15 @@
 
 ## 📋 RECOMMENDED SETTINGS (Copy Paste!)
 
+### **⚙️ Strategy Properties (Auto-configured):**
+```
+Order Size: Fixed 0.01 lot per trade
+Initial Capital: 30,000,000 IDR
+Commission: 5 USD per order
+Slippage: 2 ticks
+Currency: USD
+```
+
 ### **🎯 Core Settings:**
 ```
 ATR Period: 12

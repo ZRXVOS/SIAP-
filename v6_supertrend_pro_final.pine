@@ -2,13 +2,14 @@
 strategy("XAUUSD Supertrend Pro - Version 6",
          shorttitle="ST Pro V6",
          overlay=true,
-         default_qty_type=strategy.percent_of_equity,
-         default_qty_value=100,
+         default_qty_type=strategy.fixed,
+         default_qty_value=0.01,
          initial_capital=30000000,
          commission_type=strategy.commission.cash_per_order,
          commission_value=5,
          slippage=2,
-         pyramiding=0)
+         pyramiding=0,
+         currency=currency.USD)
 
 // ============================================================================
 // 🎯 PROVEN BASELINE SETTINGS - Based on Your 18% Profit Formula
