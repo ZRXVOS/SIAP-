@@ -122,8 +122,7 @@ if strategy.position_size < 0 and useTrailingStop
 // ============================================================================
 
 // Calculate current profit/loss percentage
-currentPnLPercent = strategy.position_size > 0 ? ((close - entryPrice) / entryPrice * 100) :
-                    strategy.position_size < 0 ? ((entryPrice - close) / entryPrice * 100) : 0
+currentPnLPercent = strategy.position_size > 0 ? ((close - entryPrice) / entryPrice * 100) : strategy.position_size < 0 ? ((entryPrice - close) / entryPrice * 100) : 0
 
 // Exit Orders
 if strategy.position_size > 0
