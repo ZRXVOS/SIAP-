@@ -4,21 +4,45 @@
 
 ## 📁 Pilih Strategy Anda
 
-### ⭐ **Version 4: Pure Supertrend** (RECOMMENDED - SIMPLE & PROFITABLE)
+### 🏆 **Version 5: Optimized Supertrend** ⭐ **RECOMMENDED - PROVEN + ENHANCED**
+**File:** `v5_optimized_supertrend.pine`
+
+**Berdasarkan Formula TERBUKTI User:**
+- ✅ ATR 12, Multiplier 3.0 (proven best)
+- ✅ LONG ONLY (proven profitable)
+- ✅ Stop Loss 4% (proven optimal)
+- ✅ **BASELINE: 18% profit, 55% win rate** (3 bulan)
+
+**Enhancements untuk boost 18% → 30%+:**
+- ✅ Trailing Stop (protect profit)
+- ✅ Fast Exit on reversal (cut loss cepat)
+- ✅ Partial Profit Taking (lock gains)
+- ✅ Advanced Dashboard (detailed metrics)
+
+**Perfect For:**
+- Yang sudah punya profitable system
+- Ingin maximize profit dengan optimization
+- Systematic testing & improvement
+
+**Target:** Win Rate 55-60%, Net Profit 25-30%+
+
+📖 **Baca:** `OPTIMIZATION_GUIDE.md` untuk step-by-step testing
+
+---
+
+### 💡 **Version 4: Pure Supertrend** (SIMPLE & CLEAN)
 **File:** `v4_pure_supertrend_simple.pine`
 
 **Filosofi: LESS IS MORE**
 - ✅ **HANYA Supertrend** - No filters!
 - ✅ Simple & Clean
-- ✅ Proven profitable (20%+ backtest)
 - ✅ Long & Short positions
 - ✅ Performance dashboard
 
 **Perfect For:**
 - Trader yang suka SIMPLE
 - Tidak suka banyak filter
-- Focus on pure price action
-- 15 menit timeframe
+- Testing different parameters
 
 **Target:** Win Rate 45%+, Net Profit 15-20%+
 
