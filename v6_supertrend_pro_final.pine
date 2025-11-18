@@ -1,0 +1,248 @@
+//@version=6
+strategy("XAUUSD Supertrend Pro - Version 6",
+         shorttitle="ST Pro V6",
+         overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=100,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2,
+         pyramiding=0)
+
+// ============================================================================
+// 🎯 PROVEN BASELINE SETTINGS - Based on Your 18% Profit Formula
+// ============================================================================
+
+atrPeriod = input.int(12, "ATR Period", minval=1, maxval=50, group="Core Settings", tooltip="Your proven: 12")
+atrMultiplier = input.float(3.0, "ATR Multiplier", minval=0.5, maxval=10.0, step=0.1, group="Core Settings", tooltip="Your proven: 3.0")
+
+// ============================================================================
+// 💰 RISK MANAGEMENT - Optimized
+// ============================================================================
+
+stopLossPercent = input.float(4.0, "Stop Loss %", minval=0.1, step=0.1, group="Risk Management", tooltip="Your proven: 4%")
+
+// CRITICAL: NO TAKE PROFIT - Let Profit Run!
+useTakeProfit = input.bool(false, "Use Take Profit", group="Risk Management", tooltip="Recommended: DISABLE to let profit run")
+takeProfitPercent = input.float(10.0, "Take Profit %", minval=0.1, step=0.1, group="Risk Management")
+
+// TRAILING STOP - Protect Profit While Running
+useTrailingStop = input.bool(true, "✅ Enable Trailing Stop", group="Trailing Stop", tooltip="RECOMMENDED")
+trailActivationPercent = input.float(4.5, "Trail Activation %", minval=1.0, step=0.5, group="Trailing Stop", tooltip="Start trailing after this profit")
+trailOffsetPercent = input.float(2.5, "Trail Offset %", minval=0.5, step=0.5, group="Trailing Stop", tooltip="Distance from peak price")
+
+// ============================================================================
+// 🚀 EXIT STRATEGY
+// ============================================================================
+
+exitOnOpposite = input.bool(true, "✅ Exit on Opposite Signal", group="Exit Strategy", tooltip="Close when Supertrend reverses")
+useSmartExit = input.bool(true, "Smart Exit (Protect Profits)", group="Exit Strategy", tooltip="Only fast exit if in loss")
+
+// ============================================================================
+// 🎚️ TRADE DIRECTION
+// ============================================================================
+
+allowLong = input.bool(true, "✅ Allow Long", group="Trade Direction")
+allowShort = input.bool(false, "Allow Short", group="Trade Direction", tooltip="Your proven: LONG only")
+
+// ============================================================================
+// 🎨 DISPLAY
+// ============================================================================
+
+showDashboard = input.bool(true, "Show Dashboard", group="Display")
+showSignals = input.bool(true, "Show Signals", group="Display")
+
+// ============================================================================
+// 📊 CALCULATIONS
+// ============================================================================
+
+[supertrend, direction] = ta.supertrend(atrMultiplier, atrPeriod)
+isBullish = direction < 0
+isBearish = direction > 0
+
+bullishFlip = ta.change(direction) < 0
+bearishFlip = ta.change(direction) > 0
+
+atr = ta.atr(atrPeriod)
+
+// ============================================================================
+// 🎯 ENTRY CONDITIONS
+// ============================================================================
+
+longCondition = allowLong and bullishFlip and strategy.position_size == 0
+shortCondition = allowShort and bearishFlip and strategy.position_size == 0
+
+// ============================================================================
+// 💼 POSITION MANAGEMENT
+// ============================================================================
+
+var float entryPrice = na
+var float stopLossPrice = na
+var float takeProfitPrice = na
+var float trailActivationPrice = na
+var float currentTrailStop = na
+
+// LONG ENTRY
+if longCondition
+    entryPrice := close
+    stopLossPrice := close * (1 - stopLossPercent / 100)
+    takeProfitPrice := useTakeProfit ? close * (1 + takeProfitPercent / 100) : na
+    trailActivationPrice := useTrailingStop ? close * (1 + trailActivationPercent / 100) : na
+    currentTrailStop := na
+
+    strategy.entry("Long", strategy.long)
+
+// SHORT ENTRY
+if shortCondition
+    entryPrice := close
+    stopLossPrice := close * (1 + stopLossPercent / 100)
+    takeProfitPrice := useTakeProfit ? close * (1 - takeProfitPercent / 100) : na
+    trailActivationPrice := useTrailingStop ? close * (1 - trailActivationPercent / 100) : na
+    currentTrailStop := na
+
+    strategy.entry("Short", strategy.short)
+
+// ============================================================================
+// 🚀 TRAILING STOP LOGIC
+// ============================================================================
+
+if strategy.position_size > 0 and useTrailingStop
+    if not na(trailActivationPrice) and close >= trailActivationPrice
+        newTrailStop = close * (1 - trailOffsetPercent / 100)
+        currentTrailStop := na(currentTrailStop) ? newTrailStop : math.max(currentTrailStop, newTrailStop)
+
+if strategy.position_size < 0 and useTrailingStop
+    if not na(trailActivationPrice) and close <= trailActivationPrice
+        newTrailStop = close * (1 + trailOffsetPercent / 100)
+        currentTrailStop := na(currentTrailStop) ? newTrailStop : math.min(currentTrailStop, newTrailStop)
+
+// ============================================================================
+// 📤 EXIT MANAGEMENT
+// ============================================================================
+
+// Calculate current profit/loss percentage
+currentPnLPercent = strategy.position_size > 0 ? ((close - entryPrice) / entryPrice * 100) :
+                    strategy.position_size < 0 ? ((entryPrice - close) / entryPrice * 100) : 0
+
+// Exit Orders
+if strategy.position_size > 0
+    // Stop Loss & Take Profit
+    if not na(currentTrailStop)
+        // Use trailing stop if active
+        strategy.exit("Exit Long", "Long", stop=math.max(stopLossPrice, currentTrailStop), limit=takeProfitPrice)
+    else if useTakeProfit
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice, limit=takeProfitPrice)
+    else
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice)
+
+if strategy.position_size < 0
+    if not na(currentTrailStop)
+        strategy.exit("Exit Short", "Short", stop=math.min(stopLossPrice, currentTrailStop), limit=takeProfitPrice)
+    else if useTakeProfit
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice, limit=takeProfitPrice)
+    else
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice)
+
+// Smart Exit on Opposite Signal
+if exitOnOpposite
+    if bearishFlip and strategy.position_size > 0
+        if useSmartExit
+            // Only fast exit if in loss or small profit
+            if currentPnLPercent < 2.0
+                strategy.close("Long", comment="ST Reversal")
+            // Otherwise let trailing stop or regular exit handle it
+        else
+            strategy.close("Long", comment="ST Reversal")
+        currentTrailStop := na
+
+    if bullishFlip and strategy.position_size < 0
+        if useSmartExit
+            if currentPnLPercent < 2.0
+                strategy.close("Short", comment="ST Reversal")
+        else
+            strategy.close("Short", comment="ST Reversal")
+        currentTrailStop := na
+
+// ============================================================================
+// 🎨 PLOTTING
+// ============================================================================
+
+plot(isBullish ? supertrend : na, "ST Up", color=color.new(color.lime, 0), linewidth=3)
+plot(isBearish ? supertrend : na, "ST Down", color=color.new(color.red, 0), linewidth=3)
+
+plotshape(showSignals and longCondition, "Long", shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.normal, text="BUY")
+plotshape(showSignals and shortCondition, "Short", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal, text="SELL")
+
+bgcolor(isBullish ? color.new(color.lime, 97) : color.new(color.red, 97))
+
+// SL/TP Lines
+plot(strategy.position_size > 0 ? stopLossPrice : na, "SL", color.new(color.red, 0), linewidth=2, style=plot.style_cross)
+plot(strategy.position_size > 0 and not na(currentTrailStop) ? currentTrailStop : na, "Trail", color.new(color.orange, 0), linewidth=2, style=plot.style_circles)
+plot(strategy.position_size > 0 and not na(takeProfitPrice) ? takeProfitPrice : na, "TP", color.new(color.green, 0), linewidth=1, style=plot.style_cross)
+
+// ============================================================================
+// 📊 PERFORMANCE DASHBOARD
+// ============================================================================
+
+if showDashboard and barstate.islast
+    var table dash = table.new(position.top_right, 2, 12, bgcolor=color.new(color.black, 85), border_width=2)
+
+    table.cell(dash, 0, 0, "📊 PERFORMANCE", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.normal)
+    table.cell(dash, 1, 0, "", bgcolor=color.new(color.blue, 70))
+
+    winRate = strategy.closedtrades > 0 ? strategy.wintrades / strategy.closedtrades * 100 : 0
+    wrColor = winRate >= 60 ? color.lime : winRate >= 50 ? color.yellow : color.red
+    table.cell(dash, 0, 1, "Win Rate", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 1, str.tostring(winRate, "#.##") + "%", text_color=wrColor, text_size=size.small)
+
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : 0
+    pfColor = pf >= 2.0 ? color.lime : pf >= 1.5 ? color.yellow : color.red
+    table.cell(dash, 0, 2, "Profit Factor", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 2, str.tostring(pf, "#.##"), text_color=pfColor, text_size=size.small)
+
+    table.cell(dash, 0, 3, "Total Trades", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 3, str.tostring(strategy.closedtrades), text_color=color.white, text_size=size.small)
+
+    table.cell(dash, 0, 4, "Wins / Losses", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 4, str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), text_color=color.white, text_size=size.small)
+
+    netProfitPct = (strategy.netprofit / strategy.initial_capital) * 100
+    npColor = netProfitPct >= 50 ? color.lime : netProfitPct >= 30 ? color.yellow : netProfitPct > 0 ? color.orange : color.red
+    table.cell(dash, 0, 5, "Profit %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 5, str.tostring(netProfitPct, "#.##") + "%", text_color=npColor, text_size=size.small)
+
+    maxDD = strategy.max_drawdown / strategy.initial_capital * 100
+    ddColor = maxDD < 10 ? color.lime : maxDD < 20 ? color.yellow : color.red
+    table.cell(dash, 0, 6, "Max DD", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 6, str.tostring(maxDD, "#.##") + "%", text_color=ddColor, text_size=size.small)
+
+    avgWin = strategy.wintrades > 0 ? (strategy.grossprofit / strategy.wintrades / strategy.initial_capital * 100) : 0
+    table.cell(dash, 0, 7, "Avg Win %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 7, str.tostring(avgWin, "#.##") + "%", text_color=color.lime, text_size=size.small)
+
+    avgLoss = strategy.losstrades > 0 ? (strategy.grossloss / strategy.losstrades / strategy.initial_capital * 100) : 0
+    table.cell(dash, 0, 8, "Avg Loss %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 8, str.tostring(avgLoss, "#.##") + "%", text_color=color.red, text_size=size.small)
+
+    rr = avgLoss > 0 ? avgWin / avgLoss : 0
+    rrColor = rr >= 2.5 ? color.lime : rr >= 2.0 ? color.yellow : color.red
+    table.cell(dash, 0, 9, "R:R Ratio", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 9, str.tostring(rr, "#.##") + ":1", text_color=rrColor, text_size=size.small)
+
+    table.cell(dash, 0, 10, "Trend", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 10, isBullish ? "BULL ▲" : "BEAR ▼", text_color=isBullish ? color.lime : color.red, text_size=size.small)
+
+    posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "NONE"
+    posColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(dash, 0, 11, "Position", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 11, posText, text_color=posColor, text_size=size.small)
+
+// ============================================================================
+// 🔔 ALERTS
+// ============================================================================
+
+alertcondition(longCondition, "🟢 LONG", "XAUUSD LONG @ {{close}}")
+alertcondition(shortCondition, "🔴 SHORT", "XAUUSD SHORT @ {{close}}")
+alertcondition(bearishFlip and strategy.position_size > 0, "⚠️ Exit Long", "Close LONG @ {{close}}")
+alertcondition(bullishFlip and strategy.position_size < 0, "⚠️ Exit Short", "Close SHORT @ {{close}}")
