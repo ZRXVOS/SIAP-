@@ -71,10 +71,7 @@ isLondonSession = currentHour >= 8 and currentHour < 16
 isNYSession = currentHour >= 13 and currentHour < 21  // Overlap with London
 
 // Active session check
-sessionActive = not useSessionFilter or
-                 (tradeLondon and isLondonSession) or
-                 (tradeNY and isNYSession) or
-                 (tradeAsian and isAsianSession)
+sessionActive = not useSessionFilter or (tradeLondon and isLondonSession) or (tradeNY and isNYSession) or (tradeAsian and isAsianSession)
 
 // ============================================================================
 // INDICATORS
@@ -136,23 +133,9 @@ volumeConfirmed = not useVolumeFilter or volumeHigh
 // ENTRY CONDITIONS
 // ============================================================================
 
-longCondition = allowLong and
-                bullishFlip and
-                dailyAlignedLong and
-                emaAlignedLong and
-                rsiAlignedLong and
-                volumeConfirmed and
-                sessionActive and
-                strategy.position_size == 0
+longCondition = allowLong and bullishFlip and dailyAlignedLong and emaAlignedLong and rsiAlignedLong and volumeConfirmed and sessionActive and strategy.position_size == 0
 
-shortCondition = allowShort and
-                 bearishFlip and
-                 dailyAlignedShort and
-                 emaAlignedShort and
-                 rsiAlignedShort and
-                 volumeConfirmed and
-                 sessionActive and
-                 strategy.position_size == 0
+shortCondition = allowShort and bearishFlip and dailyAlignedShort and emaAlignedShort and rsiAlignedShort and volumeConfirmed and sessionActive and strategy.position_size == 0
 
 // ============================================================================
 // POSITION MANAGEMENT
