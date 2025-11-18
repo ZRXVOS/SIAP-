@@ -1,0 +1,374 @@
+//@version=6
+strategy("XAUUSD Ultimate Scalper PRO - Full Featured",
+         shorttitle="XAUUSD Ultimate PRO",
+         overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=100,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2,
+         max_bars_back=1000,
+         calc_on_every_tick=false,
+         calc_on_order_fills=false,
+         pyramiding=0)
+
+// ============================================================================
+// 🎯 CORE SUPERTREND SETTINGS
+// ============================================================================
+atrPeriod = input.int(8, "ATR Period", minval=1, maxval=50, group="🎯 Core Supertrend", tooltip="Lower = More responsive, Higher = More stable")
+atrMultiplier = input.float(2.5, "ATR Multiplier", minval=0.5, maxval=10, step=0.1, group="🎯 Core Supertrend", tooltip="Lower = More signals, Higher = Less noise")
+
+// ============================================================================
+// 📊 DAILY TREND FILTER (CRITICAL!)
+// ============================================================================
+useDailyFilter = input.bool(true, "✅ Enable Daily Trend Filter", group="📊 Daily Filter", inline="daily1", tooltip="HIGHLY RECOMMENDED - Only trade with Daily trend")
+dailyAtrPeriod = input.int(10, "Daily ATR Period", minval=1, group="📊 Daily Filter", inline="daily2")
+dailyAtrMultiplier = input.float(3.0, "Daily Multiplier", minval=0.5, step=0.1, group="📊 Daily Filter", inline="daily2")
+
+// ============================================================================
+// 📈 EMA TREND CONFIRMATION
+// ============================================================================
+useEmaFilter = input.bool(true, "✅ Enable EMA Filter", group="📈 EMA Filter", inline="ema1")
+emaFastLength = input.int(13, "Fast EMA", minval=1, group="📈 EMA Filter", inline="ema2")
+emaSlowLength = input.int(21, "Slow EMA", minval=1, group="📈 EMA Filter", inline="ema2")
+emaUseCrossover = input.bool(true, "Require EMA Crossover", group="📈 EMA Filter", tooltip="Only trade when Fast EMA crossed Slow EMA")
+
+// ============================================================================
+// 🔥 RSI MOMENTUM FILTER
+// ============================================================================
+useRsiFilter = input.bool(true, "✅ Enable RSI Filter", group="🔥 RSI Filter", inline="rsi1")
+rsiLength = input.int(14, "RSI Length", minval=1, group="🔥 RSI Filter", inline="rsi2")
+rsiMidline = input.int(50, "RSI Midline", minval=0, maxval=100, group="🔥 RSI Filter", inline="rsi2")
+rsiOverbought = input.int(70, "Overbought", minval=50, maxval=100, group="🔥 RSI Filter", inline="rsi3")
+rsiOversold = input.int(30, "Oversold", minval=0, maxval=50, group="🔥 RSI Filter", inline="rsi3")
+
+// ============================================================================
+// 💹 MACD TREND CONFIRMATION
+// ============================================================================
+useMacdFilter = input.bool(false, "Enable MACD Filter", group="💹 MACD Filter", inline="macd1", tooltip="Additional confirmation - optional")
+macdFast = input.int(12, "Fast", minval=1, group="💹 MACD Filter", inline="macd2")
+macdSlow = input.int(26, "Slow", minval=1, group="💹 MACD Filter", inline="macd2")
+macdSignal = input.int(9, "Signal", minval=1, group="💹 MACD Filter", inline="macd2")
+
+// ============================================================================
+// 📊 VOLUME CONFIRMATION
+// ============================================================================
+useVolumeFilter = input.bool(true, "✅ Enable Volume Filter", group="📊 Volume Filter", inline="vol1", tooltip="Confirm breakout with volume spike")
+volumePeriod = input.int(20, "Volume MA Period", minval=1, group="📊 Volume Filter", inline="vol2")
+volumeMultiplier = input.float(1.3, "Volume Threshold", minval=0.1, step=0.1, group="📊 Volume Filter", inline="vol2", tooltip="Volume must be X times average")
+
+// ============================================================================
+// ⏰ SESSION FILTER (XAUUSD SPECIFIC)
+// ============================================================================
+useSessionFilter = input.bool(true, "✅ Enable Session Filter", group="⏰ Session Filter", inline="sess1", tooltip="Trade only during active sessions")
+tradeAsian = input.bool(false, "Asian (00-08 GMT)", group="⏰ Session Filter", inline="sess2", tooltip="Usually ranging - NOT recommended")
+tradeLondon = input.bool(true, "London (08-16 GMT)", group="⏰ Session Filter", inline="sess3", tooltip="High volatility - RECOMMENDED")
+tradeNY = input.bool(true, "NY (13-21 GMT)", group="⏰ Session Filter", inline="sess4", tooltip="High volatility - RECOMMENDED")
+
+// ============================================================================
+// 🎲 ADX TREND STRENGTH FILTER
+// ============================================================================
+useAdxFilter = input.bool(false, "Enable ADX Filter", group="🎲 ADX Filter", inline="adx1", tooltip="Only trade in strong trends")
+adxLength = input.int(14, "ADX Length", minval=1, group="🎲 ADX Filter", inline="adx2")
+adxThreshold = input.int(25, "ADX Threshold", minval=0, maxval=100, group="🎲 ADX Filter", inline="adx2", tooltip="ADX above this = trending market")
+
+// ============================================================================
+// 📉 SUPPORT/RESISTANCE FILTER
+// ============================================================================
+useSRFilter = input.bool(false, "Enable S/R Filter", group="📉 Support/Resistance", inline="sr1", tooltip="Advanced - trade near key levels")
+srLookback = input.int(50, "S/R Lookback", minval=10, group="📉 Support/Resistance", inline="sr2")
+srTolerance = input.float(0.5, "S/R Tolerance %", minval=0.1, step=0.1, group="📉 Support/Resistance", inline="sr2")
+
+// ============================================================================
+// 💰 RISK MANAGEMENT
+// ============================================================================
+riskRewardRatio = input.float(2.0, "Risk:Reward Ratio", minval=1.0, maxval=5.0, step=0.1, group="💰 Risk Management", tooltip="TP will be R:R × SL distance")
+stopLossAtr = input.float(1.5, "Stop Loss (ATR Multiplier)", minval=0.5, step=0.1, group="💰 Risk Management")
+useTrailingStop = input.bool(true, "✅ Enable Trailing Stop", group="💰 Risk Management", inline="trail1")
+trailingStopAtr = input.float(1.8, "Trailing Stop ATR", minval=0.5, step=0.1, group="💰 Risk Management", inline="trail2")
+trailingStopOffset = input.float(0.5, "Trail Offset ATR", minval=0.1, step=0.1, group="💰 Risk Management", inline="trail2")
+
+// ============================================================================
+// 🎚️ TRADE DIRECTION
+// ============================================================================
+allowLong = input.bool(true, "✅ Allow Long Positions", group="🎚️ Trade Direction", inline="dir1")
+allowShort = input.bool(true, "✅ Allow Short Positions", group="🎚️ Trade Direction", inline="dir2")
+
+// ============================================================================
+// 🎨 DISPLAY SETTINGS
+// ============================================================================
+showDashboard = input.bool(true, "Show Performance Dashboard", group="🎨 Display", inline="disp1")
+showSignals = input.bool(true, "Show Entry Signals", group="🎨 Display", inline="disp2")
+showSLTP = input.bool(true, "Show SL/TP Lines", group="🎨 Display", inline="disp3")
+showEMA = input.bool(true, "Show EMA Lines", group="🎨 Display", inline="disp4")
+
+// ============================================================================
+// 📅 TIME SESSION DETECTION
+// ============================================================================
+currentHour = hour(time, "GMT")
+isAsianSession = currentHour >= 0 and currentHour < 8
+isLondonSession = currentHour >= 8 and currentHour < 16
+isNYSession = currentHour >= 13 and currentHour < 21
+sessionActive = not useSessionFilter or (tradeAsian and isAsianSession) or (tradeLondon and isLondonSession) or (tradeNY and isNYSession)
+
+// ============================================================================
+// 📊 INDICATOR CALCULATIONS
+// ============================================================================
+
+// Supertrend - Current Timeframe
+[supertrend, stDirection] = ta.supertrend(atrMultiplier, atrPeriod)
+isBullishST = stDirection < 0
+isBearishST = stDirection > 0
+bullishFlip = ta.change(stDirection) < 0
+bearishFlip = ta.change(stDirection) > 0
+
+// Supertrend - Daily Timeframe
+[dailySupertrend, dailyDirection] = request.security(syminfo.tickerid, "D", ta.supertrend(dailyAtrMultiplier, dailyAtrPeriod), lookahead=barmerge.lookahead_on)
+isDailyBullish = dailyDirection < 0
+isDailyBearish = dailyDirection > 0
+
+// EMA Fast & Slow
+emaFast = ta.ema(close, emaFastLength)
+emaSlow = ta.ema(close, emaSlowLength)
+emaBullish = emaFast > emaSlow
+emaBearish = emaFast < emaSlow
+emaBullCross = ta.crossover(emaFast, emaSlow)
+emaBearCross = ta.crossunder(emaFast, emaSlow)
+
+// RSI
+rsi = ta.rsi(close, rsiLength)
+rsiBullish = rsi > rsiMidline
+rsiBearish = rsi < rsiMidline
+rsiNotOverbought = rsi < rsiOverbought
+rsiNotOversold = rsi > rsiOversold
+rsiInRange = rsiNotOverbought and rsiNotOversold
+
+// MACD
+[macdLine, macdSignalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
+macdBullish = macdLine > macdSignalLine
+macdBearish = macdLine < macdSignalLine
+
+// Volume
+volumeMA = ta.sma(volume, volumePeriod)
+volumeHigh = volume > volumeMA * volumeMultiplier
+
+// ADX
+[diPlus, diMinus, adx] = ta.dmi(adxLength, adxLength)
+adxStrong = adx > adxThreshold
+
+// ATR
+atr = ta.atr(atrPeriod)
+
+// Support & Resistance
+highestHigh = ta.highest(high, srLookback)
+lowestLow = ta.lowest(low, srLookback)
+resistance = highestHigh
+support = lowestLow
+nearResistance = close >= resistance * (1 - srTolerance / 100)
+nearSupport = close <= support * (1 + srTolerance / 100)
+
+// ============================================================================
+// 🎯 FILTER CONDITIONS
+// ============================================================================
+
+// Daily Trend Filter
+dailyTrendLongOk = not useDailyFilter or isDailyBullish
+dailyTrendShortOk = not useDailyFilter or isDailyBearish
+
+// EMA Filter
+emaLongOk = not useEmaFilter or (emaBullish and close > emaFast and (not emaUseCrossover or emaBullCross))
+emaShortOk = not useEmaFilter or (emaBearish and close < emaFast and (not emaUseCrossover or emaBearCross))
+
+// RSI Filter
+rsiLongOk = not useRsiFilter or (rsiBullish and rsiInRange)
+rsiShortOk = not useRsiFilter or (rsiBearish and rsiInRange)
+
+// MACD Filter
+macdLongOk = not useMacdFilter or macdBullish
+macdShortOk = not useMacdFilter or macdBearish
+
+// Volume Filter
+volumeOk = not useVolumeFilter or volumeHigh
+
+// ADX Filter
+adxOk = not useAdxFilter or adxStrong
+
+// S/R Filter
+srLongOk = not useSRFilter or nearSupport
+srShortOk = not useSRFilter or nearResistance
+
+// ============================================================================
+// 🚀 ENTRY CONDITIONS
+// ============================================================================
+
+longCondition = allowLong and bullishFlip and dailyTrendLongOk and emaLongOk and rsiLongOk and macdLongOk and volumeOk and adxOk and srLongOk and sessionActive and strategy.position_size == 0
+
+shortCondition = allowShort and bearishFlip and dailyTrendShortOk and emaShortOk and rsiShortOk and macdShortOk and volumeOk and adxOk and srShortOk and sessionActive and strategy.position_size == 0
+
+// ============================================================================
+// 💼 POSITION MANAGEMENT
+// ============================================================================
+
+var float entryPrice = na
+var float stopLossPrice = na
+var float takeProfitPrice = na
+var float trailPrice = na
+var float trailOffset = na
+
+// Long Entry
+if longCondition
+    entryPrice := close
+    stopLossPrice := entryPrice - (atr * stopLossAtr)
+    takeProfitPrice := entryPrice + (atr * stopLossAtr * riskRewardRatio)
+    trailPrice := useTrailingStop ? entryPrice + (atr * trailingStopAtr) : na
+    trailOffset := useTrailingStop ? atr * trailingStopOffset : na
+    strategy.entry("Long", strategy.long)
+    if useTrailingStop
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice, limit=takeProfitPrice, trail_price=trailPrice, trail_offset=trailOffset)
+    else
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice, limit=takeProfitPrice)
+
+// Short Entry
+if shortCondition
+    entryPrice := close
+    stopLossPrice := entryPrice + (atr * stopLossAtr)
+    takeProfitPrice := entryPrice - (atr * stopLossAtr * riskRewardRatio)
+    trailPrice := useTrailingStop ? entryPrice - (atr * trailingStopAtr) : na
+    trailOffset := useTrailingStop ? atr * trailingStopOffset : na
+    strategy.entry("Short", strategy.short)
+    if useTrailingStop
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice, limit=takeProfitPrice, trail_price=trailPrice, trail_offset=trailOffset)
+    else
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice, limit=takeProfitPrice)
+
+// Emergency Exit on Opposite Signal
+if bearishFlip and strategy.position_size > 0
+    strategy.close("Long", comment="Supertrend Reversal")
+
+if bullishFlip and strategy.position_size < 0
+    strategy.close("Short", comment="Supertrend Reversal")
+
+// ============================================================================
+// 🎨 PLOTTING
+// ============================================================================
+
+// Supertrend
+plot(isBullishST ? supertrend : na, "Supertrend Up", color=color.new(color.lime, 0), linewidth=2, style=plot.style_line)
+plot(isBearishST ? supertrend : na, "Supertrend Down", color=color.new(color.red, 0), linewidth=2, style=plot.style_line)
+
+// EMA Lines
+plot(showEMA and useEmaFilter ? emaFast : na, "EMA Fast", color=color.new(color.blue, 0), linewidth=2)
+plot(showEMA and useEmaFilter ? emaSlow : na, "EMA Slow", color=color.new(color.orange, 0), linewidth=2)
+
+// Daily Trend Background
+bgcolor(useDailyFilter and isDailyBullish ? color.new(color.green, 96) : na, title="Daily Bullish")
+bgcolor(useDailyFilter and isDailyBearish ? color.new(color.red, 96) : na, title="Daily Bearish")
+
+// Session Background
+sessionBgColor = isLondonSession and tradeLondon ? color.new(color.yellow, 98) : isNYSession and tradeNY ? color.new(color.blue, 98) : isAsianSession and tradeAsian ? color.new(color.gray, 98) : na
+bgcolor(useSessionFilter ? sessionBgColor : na, title="Session")
+
+// Entry Signals
+plotshape(showSignals and longCondition, "Long Signal", shape.triangleup, location.belowbar, color=color.new(color.lime, 0), size=size.normal, text="LONG")
+plotshape(showSignals and shortCondition, "Short Signal", shape.triangledown, location.abovebar, color=color.new(color.red, 0), size=size.normal, text="SHORT")
+
+// SL/TP Lines
+plot(showSLTP and strategy.position_size > 0 ? stopLossPrice : na, "Long SL", color=color.new(color.red, 0), linewidth=2, style=plot.style_cross)
+plot(showSLTP and strategy.position_size > 0 ? takeProfitPrice : na, "Long TP", color=color.new(color.green, 0), linewidth=2, style=plot.style_cross)
+plot(showSLTP and strategy.position_size < 0 ? stopLossPrice : na, "Short SL", color=color.new(color.red, 0), linewidth=2, style=plot.style_cross)
+plot(showSLTP and strategy.position_size < 0 ? takeProfitPrice : na, "Short TP", color=color.new(color.green, 0), linewidth=2, style=plot.style_cross)
+
+// Support/Resistance Lines
+plot(useSRFilter ? resistance : na, "Resistance", color=color.new(color.red, 70), linewidth=1, style=plot.style_circles)
+plot(useSRFilter ? support : na, "Support", color=color.new(color.green, 70), linewidth=1, style=plot.style_circles)
+
+// ============================================================================
+// 📊 PERFORMANCE DASHBOARD
+// ============================================================================
+
+if showDashboard and barstate.islast
+    var table dashboard = table.new(position.top_right, 2, 12, bgcolor=color.new(color.black, 85), border_width=2, border_color=color.new(color.gray, 50))
+
+    // Header
+    table.cell(dashboard, 0, 0, "📊 PERFORMANCE METRICS", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.normal)
+    table.cell(dashboard, 1, 0, "", bgcolor=color.new(color.blue, 70))
+
+    // Win Rate
+    winRate = strategy.closedtrades > 0 ? strategy.wintrades / strategy.closedtrades * 100 : 0
+    winRateColor = winRate >= 60 ? color.lime : winRate >= 50 ? color.yellow : color.red
+    table.cell(dashboard, 0, 1, "Win Rate", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 1, str.tostring(winRate, "#.##") + "%", text_color=winRateColor, text_size=size.small)
+
+    // Profit Factor
+    profitFactor = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : 0
+    pfColor = profitFactor >= 2.0 ? color.lime : profitFactor >= 1.5 ? color.yellow : color.red
+    table.cell(dashboard, 0, 2, "Profit Factor", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 2, str.tostring(profitFactor, "#.##"), text_color=pfColor, text_size=size.small)
+
+    // Total Trades
+    table.cell(dashboard, 0, 3, "Total Trades", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 3, str.tostring(strategy.closedtrades), text_color=color.white, text_size=size.small)
+
+    // Win/Loss Trades
+    table.cell(dashboard, 0, 4, "Wins / Losses", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 4, str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), text_color=color.white, text_size=size.small)
+
+    // Net Profit
+    netProfitM = strategy.netprofit / 1000000
+    netProfitColor = strategy.netprofit > 0 ? color.lime : color.red
+    table.cell(dashboard, 0, 5, "Net Profit", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 5, str.tostring(netProfitM, "#,###.##") + " M", text_color=netProfitColor, text_size=size.small)
+
+    // Max Drawdown
+    maxDD = strategy.max_drawdown / strategy.initial_capital * 100
+    ddColor = maxDD < 10 ? color.lime : maxDD < 20 ? color.yellow : color.red
+    table.cell(dashboard, 0, 6, "Max Drawdown", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 6, str.tostring(maxDD, "#.##") + "%", text_color=ddColor, text_size=size.small)
+
+    // Avg Trade
+    avgTrade = strategy.closedtrades > 0 ? strategy.netprofit / strategy.closedtrades / 1000 : 0
+    avgTradeColor = avgTrade > 0 ? color.lime : color.red
+    table.cell(dashboard, 0, 7, "Avg Trade", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 7, str.tostring(avgTrade, "#,###") + " K", text_color=avgTradeColor, text_size=size.small)
+
+    // Sharpe Ratio (simplified)
+    avgReturn = strategy.closedtrades > 0 ? strategy.netprofit / strategy.closedtrades : 0
+    stdDev = strategy.closedtrades > 0 ? math.sqrt(strategy.grossloss / strategy.closedtrades) : 1
+    sharpe = stdDev > 0 ? avgReturn / stdDev : 0
+    sharpeColor = sharpe > 2.0 ? color.lime : sharpe > 1.0 ? color.yellow : color.red
+    table.cell(dashboard, 0, 8, "Sharpe Ratio", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 8, str.tostring(sharpe, "#.##"), text_color=sharpeColor, text_size=size.small)
+
+    // Daily Trend
+    table.cell(dashboard, 0, 9, "Daily Trend", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 9, isDailyBullish ? "BULL ▲" : "BEAR ▼", text_color=isDailyBullish ? color.lime : color.red, text_size=size.small)
+
+    // Current Session
+    currentSession = isLondonSession ? "London" : isNYSession ? "NY" : isAsianSession ? "Asian" : "Closed"
+    table.cell(dashboard, 0, 10, "Session", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 10, currentSession, text_color=color.yellow, text_size=size.small)
+
+    // Current Position
+    positionText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "NONE"
+    positionColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(dashboard, 0, 11, "Position", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, 11, positionText, text_color=positionColor, text_size=size.small)
+
+// ============================================================================
+// 🔔 ALERTS
+// ============================================================================
+
+alertcondition(longCondition, title="🟢 LONG ENTRY", message="XAUUSD LONG Signal\n✅ All filters confirmed\n📊 Daily: {{plot_0}}\n💰 Price: {{close}}\n⏰ Time: {{time}}")
+alertcondition(shortCondition, title="🔴 SHORT ENTRY", message="XAUUSD SHORT Signal\n✅ All filters confirmed\n📊 Daily: {{plot_1}}\n💰 Price: {{close}}\n⏰ Time: {{time}}")
+alertcondition(bearishFlip and strategy.position_size > 0, title="⚠️ EXIT LONG", message="Close LONG Position\n🔄 Supertrend Reversal\n💰 Price: {{close}}")
+alertcondition(bullishFlip and strategy.position_size < 0, title="⚠️ EXIT SHORT", message="Close SHORT Position\n🔄 Supertrend Reversal\n💰 Price: {{close}}")
+
+// ============================================================================
+// 📝 STRATEGY INFO
+// ============================================================================
+
+// Display strategy info as plot comment
+plotchar(true, "Strategy", "XAUUSD Ultimate Scalper PRO v6", location=location.top, color=color.new(color.white, 100))
+plotchar(true, "Timeframe", "15m or 1H recommended", location=location.top, color=color.new(color.white, 100))
+plotchar(true, "Risk:Reward", str.tostring(riskRewardRatio) + ":1", location=location.top, color=color.new(color.white, 100))
