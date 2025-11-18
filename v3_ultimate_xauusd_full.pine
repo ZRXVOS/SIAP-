@@ -1,6 +1,6 @@
 //@version=6
 strategy("XAUUSD Ultimate Scalper PRO - Full Featured",
-         shorttitle="XAUUSD Ultimate PRO",
+         shorttitle="Gold Pro",
          overlay=true,
          default_qty_type=strategy.percent_of_equity,
          default_qty_value=100,
@@ -368,7 +368,5 @@ alertcondition(bullishFlip and strategy.position_size < 0, title="⚠️ EXIT SH
 // 📝 STRATEGY INFO
 // ============================================================================
 
-// Display strategy info as plot comment
-plotchar(true, "Strategy", "XAUUSD Ultimate Scalper PRO v6", location=location.top, color=color.new(color.white, 100))
-plotchar(true, "Timeframe", "15m or 1H recommended", location=location.top, color=color.new(color.white, 100))
-plotchar(true, "Risk:Reward", str.tostring(riskRewardRatio) + ":1", location=location.top, color=color.new(color.white, 100))
+// All strategy information is displayed in the Performance Dashboard
+// No additional plot comments needed
