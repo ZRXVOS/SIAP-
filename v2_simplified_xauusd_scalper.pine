@@ -1,0 +1,274 @@
+//@version=6
+strategy("XAUUSD Simplified Scalper Pro v6",
+         overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=100,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2,
+         max_bars_back=500)
+
+// ============================================================================
+// PHILOSOPHY: Less is More
+// Focus on high-probability setups only
+// Daily trend + Current TF confirmation + Key filter = Profitable
+// ============================================================================
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+
+// Core Strategy Settings
+atrPeriod = input.int(8, "ATR Period", minval=1, group="Core Settings", tooltip="Lower for more responsive scalping")
+factor = input.float(2.5, "Supertrend Multiplier", step=0.1, minval=0.1, group="Core Settings", tooltip="Lower = more signals but more noise")
+
+// Daily Trend Filter (CRITICAL)
+useDailyFilter = input.bool(true, "Use Daily Trend Filter", group="Daily Filter", tooltip="Only trade in direction of Daily trend")
+dailyAtrPeriod = input.int(10, "Daily ATR Period", minval=1, group="Daily Filter")
+dailyFactor = input.float(3.0, "Daily Multiplier", step=0.1, minval=0.1, group="Daily Filter")
+
+// EMA Trend Confirmation
+emaFastLength = input.int(13, "EMA Fast", minval=1, group="EMA Filter")
+emaSlowLength = input.int(21, "EMA Slow", minval=1, group="EMA Filter")
+useEmaFilter = input.bool(true, "Use EMA Crossover Filter", group="EMA Filter", tooltip="Only trade when EMAs are aligned with trend")
+
+// RSI Momentum Filter
+rsiLength = input.int(14, "RSI Period", minval=1, group="RSI Filter")
+rsiMidline = input.int(50, "RSI Midline", minval=0, maxval=100, group="RSI Filter")
+useRsiFilter = input.bool(true, "Use RSI Filter", group="RSI Filter", tooltip="Avoid extreme overbought/oversold")
+
+// Volume Confirmation
+useVolumeFilter = input.bool(true, "Use Volume Confirmation", group="Volume Filter")
+volumePeriod = input.int(20, "Volume MA Period", minval=1, group="Volume Filter")
+volumeMultiplier = input.float(1.3, "Volume Threshold", step=0.1, minval=0.1, group="Volume Filter")
+
+// Session Filter (XAUUSD SPECIFIC)
+useSessionFilter = input.bool(true, "Enable Session Filter", group="Session Filter")
+tradeLondon = input.bool(true, "Trade London Session", group="Session Filter")
+tradeNY = input.bool(true, "Trade NY Session", group="Session Filter")
+tradeAsian = input.bool(false, "Trade Asian Session", group="Session Filter", tooltip="Usually ranging, not recommended for XAUUSD")
+
+// Risk Management
+riskRewardRatio = input.float(2.0, "Risk:Reward Ratio", step=0.1, minval=1.0, group="Risk Management", tooltip="TP will be this multiple of SL")
+stopLossAtr = input.float(1.5, "Stop Loss (ATR)", step=0.1, minval=0.5, group="Risk Management")
+useTrailingStop = input.bool(true, "Use Trailing Stop", group="Risk Management")
+trailingStopAtr = input.float(1.8, "Trailing Stop (ATR)", step=0.1, minval=0.5, group="Risk Management")
+
+// Position Direction
+allowLong = input.bool(true, "Allow Long", group="Trade Direction")
+allowShort = input.bool(true, "Allow Short", group="Trade Direction")
+
+// ============================================================================
+// TIME SESSION DETECTION
+// ============================================================================
+
+currentHour = hour(time, "GMT")
+
+// Session times (GMT)
+isAsianSession = currentHour >= 0 and currentHour < 8
+isLondonSession = currentHour >= 8 and currentHour < 16
+isNYSession = currentHour >= 13 and currentHour < 21  // Overlap with London
+
+// Active session check
+sessionActive = not useSessionFilter or
+                 (tradeLondon and isLondonSession) or
+                 (tradeNY and isNYSession) or
+                 (tradeAsian and isAsianSession)
+
+// ============================================================================
+// INDICATORS
+// ============================================================================
+
+// Supertrend - Current Timeframe
+[supertrend, stDirection] = ta.supertrend(factor, atrPeriod)
+isBullish = stDirection < 0
+isBearish = stDirection > 0
+
+// Supertrend - Daily Timeframe
+[dailySupertrend, dailyDirection] = request.security(syminfo.tickerid, "D", ta.supertrend(dailyFactor, dailyAtrPeriod), lookahead=barmerge.lookahead_on)
+isDailyBullish = dailyDirection < 0
+isDailyBearish = dailyDirection > 0
+
+// EMA Fast & Slow
+emaFast = ta.ema(close, emaFastLength)
+emaSlow = ta.ema(close, emaSlowLength)
+emaBullish = emaFast > emaSlow
+emaBearish = emaFast < emaSlow
+
+// RSI
+rsi = ta.rsi(close, rsiLength)
+rsiBullish = rsi > rsiMidline
+rsiBearish = rsi < rsiMidline
+rsiNotExtreme = rsi > 30 and rsi < 70
+
+// Volume
+volumeMA = ta.sma(volume, volumePeriod)
+volumeHigh = volume > volumeMA * volumeMultiplier
+
+// ATR for SL/TP
+atr = ta.atr(atrPeriod)
+
+// ============================================================================
+// SIGNAL DETECTION
+// ============================================================================
+
+// Supertrend flip
+bullishFlip = ta.change(stDirection) < 0
+bearishFlip = ta.change(stDirection) > 0
+
+// Daily trend alignment
+dailyAlignedLong = not useDailyFilter or isDailyBullish
+dailyAlignedShort = not useDailyFilter or isDailyBearish
+
+// EMA alignment
+emaAlignedLong = not useEmaFilter or (emaBullish and close > emaFast)
+emaAlignedShort = not useEmaFilter or (emaBearish and close < emaFast)
+
+// RSI filter
+rsiAlignedLong = not useRsiFilter or (rsiBullish and rsiNotExtreme)
+rsiAlignedShort = not useRsiFilter or (rsiBearish and rsiNotExtreme)
+
+// Volume filter
+volumeConfirmed = not useVolumeFilter or volumeHigh
+
+// ============================================================================
+// ENTRY CONDITIONS
+// ============================================================================
+
+longCondition = allowLong and
+                bullishFlip and
+                dailyAlignedLong and
+                emaAlignedLong and
+                rsiAlignedLong and
+                volumeConfirmed and
+                sessionActive and
+                strategy.position_size == 0
+
+shortCondition = allowShort and
+                 bearishFlip and
+                 dailyAlignedShort and
+                 emaAlignedShort and
+                 rsiAlignedShort and
+                 volumeConfirmed and
+                 sessionActive and
+                 strategy.position_size == 0
+
+// ============================================================================
+// POSITION MANAGEMENT
+// ============================================================================
+
+// Calculate SL/TP based on ATR
+var float entryPrice = na
+var float stopLossPrice = na
+var float takeProfitPrice = na
+
+if longCondition
+    entryPrice := close
+    stopLossPrice := entryPrice - (atr * stopLossAtr)
+    takeProfitPrice := entryPrice + (atr * stopLossAtr * riskRewardRatio)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit Long", "Long",
+                  stop=stopLossPrice,
+                  limit=takeProfitPrice,
+                  trail_price=useTrailingStop ? entryPrice + (atr * trailingStopAtr) : na,
+                  trail_offset=useTrailingStop ? atr * 0.5 : na)
+
+if shortCondition
+    entryPrice := close
+    stopLossPrice := entryPrice + (atr * stopLossAtr)
+    takeProfitPrice := entryPrice - (atr * stopLossAtr * riskRewardRatio)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit Short", "Short",
+                  stop=stopLossPrice,
+                  limit=takeProfitPrice,
+                  trail_price=useTrailingStop ? entryPrice - (atr * trailingStopAtr) : na,
+                  trail_offset=useTrailingStop ? atr * 0.5 : na)
+
+// Emergency exit on opposite Supertrend signal
+if bearishFlip and strategy.position_size > 0
+    strategy.close("Long", comment="ST Reversal")
+
+if bullishFlip and strategy.position_size < 0
+    strategy.close("Short", comment="ST Reversal")
+
+// ============================================================================
+// PLOTTING
+// ============================================================================
+
+// Supertrend
+plot(isBullish ? supertrend : na, "ST Up", color=color.new(color.lime, 0), linewidth=2)
+plot(isBearish ? supertrend : na, "ST Down", color=color.new(color.red, 0), linewidth=2)
+
+// EMAs
+plot(emaFast, "EMA Fast", color=color.new(color.blue, 0), linewidth=1)
+plot(emaSlow, "EMA Slow", color=color.new(color.orange, 0), linewidth=1)
+
+// Daily Trend Background
+bgcolor(useDailyFilter and isDailyBullish ? color.new(color.green, 96) : na, title="Daily Bull")
+bgcolor(useDailyFilter and isDailyBearish ? color.new(color.red, 96) : na, title="Daily Bear")
+
+// Session Background
+sessionColor = isLondonSession ? color.new(color.yellow, 98) :
+               isNYSession ? color.new(color.blue, 98) :
+               isAsianSession ? color.new(color.gray, 98) : na
+bgcolor(useSessionFilter ? sessionColor : na, title="Session")
+
+// Entry Signals
+plotshape(longCondition, "Long", shape.triangleup, location.belowbar,
+          color.new(color.green, 0), size=size.normal, text="BUY")
+plotshape(shortCondition, "Short", shape.triangledown, location.abovebar,
+          color.new(color.red, 0), size=size.normal, text="SELL")
+
+// SL/TP Lines (when position open)
+plot(strategy.position_size > 0 ? stopLossPrice : na, "Long SL",
+     color.red, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size > 0 ? takeProfitPrice : na, "Long TP",
+     color.green, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size < 0 ? stopLossPrice : na, "Short SL",
+     color.red, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size < 0 ? takeProfitPrice : na, "Short TP",
+     color.green, linewidth=1, style=plot.style_cross)
+
+// ============================================================================
+// PERFORMANCE INFO TABLE
+// ============================================================================
+
+// Display key metrics on chart
+var table performanceTable = table.new(position.top_right, 2, 6,
+                                        bgcolor=color.new(color.black, 80),
+                                        border_width=1)
+
+if barstate.islast
+    // Header
+    table.cell(performanceTable, 0, 0, "Metric", text_color=color.white, bgcolor=color.new(color.gray, 70))
+    table.cell(performanceTable, 1, 0, "Value", text_color=color.white, bgcolor=color.new(color.gray, 70))
+
+    // Metrics
+    table.cell(performanceTable, 0, 1, "Win Rate", text_color=color.white)
+    table.cell(performanceTable, 1, 1, str.tostring(strategy.wintrades / strategy.closedtrades * 100, "#.##") + "%",
+               text_color=strategy.wintrades / strategy.closedtrades >= 0.6 ? color.lime : color.orange)
+
+    table.cell(performanceTable, 0, 2, "Profit Factor", text_color=color.white)
+    table.cell(performanceTable, 1, 2, str.tostring(strategy.grossprofit / strategy.grossloss, "#.##"),
+               text_color=strategy.grossprofit / strategy.grossloss >= 1.5 ? color.lime : color.orange)
+
+    table.cell(performanceTable, 0, 3, "Total Trades", text_color=color.white)
+    table.cell(performanceTable, 1, 3, str.tostring(strategy.closedtrades), text_color=color.white)
+
+    table.cell(performanceTable, 0, 4, "Net Profit", text_color=color.white)
+    table.cell(performanceTable, 1, 4, str.tostring(strategy.netprofit / 1000000, "#,###") + "M",
+               text_color=strategy.netprofit > 0 ? color.lime : color.red)
+
+    table.cell(performanceTable, 0, 5, "Daily Trend", text_color=color.white)
+    table.cell(performanceTable, 1, 5, isDailyBullish ? "BULLISH ▲" : "BEARISH ▼",
+               text_color=isDailyBullish ? color.lime : color.red)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(longCondition, "Long Entry", "🟢 XAUUSD LONG - All filters confirmed")
+alertcondition(shortCondition, "Short Entry", "🔴 XAUUSD SHORT - All filters confirmed")
+alertcondition(bearishFlip and strategy.position_size > 0, "Exit Long", "⚠️ Exit LONG - Supertrend reversed")
+alertcondition(bullishFlip and strategy.position_size < 0, "Exit Short", "⚠️ Exit SHORT - Supertrend reversed")

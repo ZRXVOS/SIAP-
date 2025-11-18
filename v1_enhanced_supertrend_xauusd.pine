@@ -1,0 +1,235 @@
+//@version=6
+strategy("XAUUSD Enhanced Supertrend Multi-Timeframe v6",
+         overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=100,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2)
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+
+// Supertrend Settings
+atrPeriod = input.int(10, "ATR Period", minval=1, group="Supertrend")
+factor = input.float(3.0, "ATR Multiplier", step=0.1, minval=0.1, group="Supertrend")
+
+// Daily Trend Filter
+useDailyTrend = input.bool(true, "Use Daily Trend Filter", group="Multi-Timeframe")
+dailyAtrPeriod = input.int(10, "Daily ATR Period", minval=1, group="Multi-Timeframe")
+dailyFactor = input.float(3.0, "Daily ATR Multiplier", step=0.1, minval=0.1, group="Multi-Timeframe")
+
+// Trading Direction
+allowLong = input.bool(true, "Allow Long Positions", group="Trade Direction")
+allowShort = input.bool(true, "Allow Short Positions", group="Trade Direction")
+
+// Risk Management
+useStopLoss = input.bool(true, "Use Stop Loss", group="Risk Management")
+stopLossAtr = input.float(1.5, "Stop Loss (ATR Multiplier)", step=0.1, minval=0.1, group="Risk Management")
+useTakeProfit = input.bool(true, "Use Take Profit", group="Risk Management")
+takeProfitAtr = input.float(3.0, "Take Profit (ATR Multiplier)", step=0.1, minval=0.1, group="Risk Management")
+useTrailingStop = input.bool(true, "Use Trailing Stop", group="Risk Management")
+trailingStopAtr = input.float(2.0, "Trailing Stop (ATR Multiplier)", step=0.1, minval=0.1, group="Risk Management")
+
+// EMA Filter
+useEma = input.bool(true, "Use EMA Filter", group="EMA")
+emaLength = input.int(50, "EMA Length", minval=1, group="EMA")
+
+// RSI Filter
+useRsi = input.bool(true, "Use RSI Filter", group="RSI")
+rsiLength = input.int(14, "RSI Length", minval=1, group="RSI")
+rsiOversold = input.int(40, "RSI Oversold", minval=0, maxval=100, group="RSI")
+rsiOverbought = input.int(60, "RSI Overbought", minval=0, maxval=100, group="RSI")
+
+// MFI Filter
+useMfi = input.bool(false, "Use MFI Filter", group="MFI")
+mfiLength = input.int(14, "MFI Length", minval=1, group="MFI")
+mfiOversold = input.int(20, "MFI Oversold", minval=0, maxval=100, group="MFI")
+mfiOverbought = input.int(80, "MFI Overbought", minval=0, maxval=100, group="MFI")
+
+// Stochastic Filter
+useStoch = input.bool(false, "Use Stochastic Filter", group="Stochastic")
+stochLength = input.int(14, "Stochastic K", minval=1, group="Stochastic")
+stochSmoothK = input.int(3, "Smooth K", minval=1, group="Stochastic")
+stochSmoothD = input.int(3, "Smooth D", minval=1, group="Stochastic")
+stochOversold = input.int(20, "Stoch Oversold", minval=0, maxval=100, group="Stochastic")
+stochOverbought = input.int(80, "Stoch Overbought", minval=0, maxval=100, group="Stochastic")
+
+// Volume Filter
+useVolume = input.bool(true, "Use Volume Filter", group="Volume")
+volumeMultiplier = input.float(1.2, "Volume Multiplier", step=0.1, minval=0.1, group="Volume")
+
+// Session Filter for XAUUSD
+useSessionFilter = input.bool(true, "Use Session Filter", group="Session Filter")
+londonStart = input.int(8, "London Start (GMT)", minval=0, maxval=23, group="Session Filter")
+londonEnd = input.int(12, "London End (GMT)", minval=0, maxval=23, group="Session Filter")
+nyStart = input.int(13, "NY Start (GMT)", minval=0, maxval=23, group="Session Filter")
+nyEnd = input.int(17, "NY End (GMT)", minval=0, maxval=23, group="Session Filter")
+
+// ============================================================================
+// INDICATORS CALCULATION
+// ============================================================================
+
+// Current Timeframe Supertrend
+[supertrend, direction] = ta.supertrend(factor, atrPeriod)
+isUptrend = direction < 0
+isDowntrend = direction > 0
+
+// Daily Timeframe Supertrend
+[dailySupertrend, dailyDirection] = request.security(syminfo.tickerid, "D", ta.supertrend(dailyFactor, dailyAtrPeriod))
+isDailyUptrend = dailyDirection < 0
+isDailyDowntrend = dailyDirection > 0
+
+// EMA
+ema = ta.ema(close, emaLength)
+priceAboveEma = close > ema
+priceBelowEma = close < ema
+
+// RSI
+rsi = ta.rsi(close, rsiLength)
+rsiLongOk = rsi > rsiOversold and rsi < 70
+rsiShortOk = rsi < rsiOverbought and rsi > 30
+
+// MFI
+mfi = ta.mfi(hlc3, mfiLength)
+mfiLongOk = mfi > mfiOversold
+mfiShortOk = mfi < mfiOverbought
+
+// Stochastic
+stochK = ta.sma(ta.stoch(close, high, low, stochLength), stochSmoothK)
+stochD = ta.sma(stochK, stochSmoothD)
+stochLongOk = stochK > stochOversold
+stochShortOk = stochK < stochOverbought
+
+// Volume
+volumeMA = ta.sma(volume, 20)
+volumeOk = volume > volumeMA * volumeMultiplier
+
+// Session Filter
+currentHour = hour(time, "GMT")
+isLondonSession = currentHour >= londonStart and currentHour < londonEnd
+isNYSession = currentHour >= nyStart and currentHour < nyEnd
+isActiveSession = isLondonSession or isNYSession
+
+// ATR for dynamic SL/TP
+atr = ta.atr(atrPeriod)
+
+// ============================================================================
+// ENTRY CONDITIONS
+// ============================================================================
+
+// Supertrend flip signals
+longSignal = ta.change(direction) < 0
+shortSignal = ta.change(direction) > 0
+
+// Daily trend confirmation
+dailyTrendLongOk = not useDailyTrend or isDailyUptrend
+dailyTrendShortOk = not useDailyTrend or isDailyDowntrend
+
+// Filter conditions
+emaLongOk = not useEma or priceAboveEma
+emaShortOk = not useEma or priceBelowEma
+
+rsiFilterLongOk = not useRsi or rsiLongOk
+rsiFilterShortOk = not useRsi or rsiShortOk
+
+mfiFilterLongOk = not useMfi or mfiLongOk
+mfiFilterShortOk = not useMfi or mfiShortOk
+
+stochFilterLongOk = not useStoch or stochLongOk
+stochFilterShortOk = not useStoch or stochShortOk
+
+volumeFilterOk = not useVolume or volumeOk
+
+sessionFilterOk = not useSessionFilter or isActiveSession
+
+// Combined entry conditions
+longCondition = allowLong and longSignal and dailyTrendLongOk and emaLongOk and
+                rsiFilterLongOk and mfiFilterLongOk and stochFilterLongOk and
+                volumeFilterOk and sessionFilterOk
+
+shortCondition = allowShort and shortSignal and dailyTrendShortOk and emaShortOk and
+                 rsiFilterShortOk and mfiFilterShortOk and stochFilterShortOk and
+                 volumeFilterOk and sessionFilterOk
+
+// ============================================================================
+// POSITION MANAGEMENT
+// ============================================================================
+
+// Calculate SL/TP levels
+longStopLoss = useStopLoss ? close - (atr * stopLossAtr) : na
+longTakeProfit = useTakeProfit ? close + (atr * takeProfitAtr) : na
+longTrailingStop = useTrailingStop ? close - (atr * trailingStopAtr) : na
+
+shortStopLoss = useStopLoss ? close + (atr * stopLossAtr) : na
+shortTakeProfit = useTakeProfit ? close - (atr * takeProfitAtr) : na
+shortTrailingStop = useTrailingStop ? close + (atr * trailingStopAtr) : na
+
+// Entry orders
+if longCondition and strategy.position_size == 0
+    if useStopLoss and useTakeProfit and useTrailingStop
+        strategy.entry("Long", strategy.long, stop=longStopLoss, limit=longTakeProfit, trail_price=longTrailingStop)
+    else if useStopLoss and useTakeProfit
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Exit Long", "Long", stop=longStopLoss, limit=longTakeProfit)
+    else if useStopLoss
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Exit Long", "Long", stop=longStopLoss)
+    else
+        strategy.entry("Long", strategy.long)
+
+if shortCondition and strategy.position_size == 0
+    if useStopLoss and useTakeProfit and useTrailingStop
+        strategy.entry("Short", strategy.short, stop=shortStopLoss, limit=shortTakeProfit, trail_price=shortTrailingStop)
+    else if useStopLoss and useTakeProfit
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Exit Short", "Short", stop=shortStopLoss, limit=shortTakeProfit)
+    else if useStopLoss
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Exit Short", "Short", stop=shortStopLoss)
+    else
+        strategy.entry("Short", strategy.short)
+
+// Close on opposite signal
+if shortSignal and strategy.position_size > 0
+    strategy.close("Long", comment="Trend Reversal")
+
+if longSignal and strategy.position_size < 0
+    strategy.close("Short", comment="Trend Reversal")
+
+// ============================================================================
+// PLOTTING
+// ============================================================================
+
+// Supertrend
+plot(isUptrend ? supertrend : na, "Uptrend", color=color.new(color.green, 0), linewidth=2, style=plot.style_line)
+plot(isDowntrend ? supertrend : na, "Downtrend", color=color.new(color.red, 0), linewidth=2, style=plot.style_line)
+
+// EMA
+plot(useEma ? ema : na, "EMA", color=color.new(color.blue, 0), linewidth=1)
+
+// Daily Supertrend background
+bgcolor(useDailyTrend and isDailyUptrend ? color.new(color.green, 95) : na, title="Daily Uptrend BG")
+bgcolor(useDailyTrend and isDailyDowntrend ? color.new(color.red, 95) : na, title="Daily Downtrend BG")
+
+// Session background
+bgcolor(useSessionFilter and isActiveSession ? color.new(color.yellow, 97) : na, title="Active Session")
+
+// Entry signals
+plotshape(longCondition, "Long Signal", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.small)
+plotshape(shortCondition, "Short Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.small)
+
+// SL/TP levels (only when position is open)
+plot(strategy.position_size > 0 ? longStopLoss : na, "Long SL", color.red, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size > 0 ? longTakeProfit : na, "Long TP", color.green, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size < 0 ? shortStopLoss : na, "Short SL", color.red, linewidth=1, style=plot.style_cross)
+plot(strategy.position_size < 0 ? shortTakeProfit : na, "Short TP", color.green, linewidth=1, style=plot.style_cross)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(longCondition, title="Long Entry", message="XAUUSD Long Signal - Supertrend flipped bullish with all filters confirmed")
+alertcondition(shortCondition, title="Short Entry", message="XAUUSD Short Signal - Supertrend flipped bearish with all filters confirmed")
