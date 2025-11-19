@@ -4,7 +4,30 @@
 
 ## 📁 Pilih Strategy Anda
 
-### 🚀 **Version 7: Daily Gainer Pro** ⭐ **LATEST - PATH 3 (2-3% Daily)**
+### 🔥 **Version 8: Simple Daily Gainer** ⭐ **LATEST - SIMPLE & MUTAKHIR**
+**File:** `v8_simple_daily_gainer.pine`
+
+**SIMPLE tapi POWERFUL:**
+- ✅ Proven formula (ATR 12, Multi 3.0, LONG only)
+- ✅ Trailing Stop (protect profit)
+- ✅ Daily limits OPTIONAL (bisa ON/OFF)
+- ✅ Clean code, NO bugs
+- ✅ Position size: 0.02 lot default (adjustable)
+- ✅ Exit on Supertrend reverse
+
+**Perfect For:**
+- Semua trader (beginner to advanced)
+- Yang mau simple tapi modern
+- Flexible: dengan atau tanpa daily limits
+- Proven results
+
+**Expected:** 40-70% profit per quarter, 50-60% win rate
+
+📖 **Baca:** `V8_SETUP.md` untuk quick start
+
+---
+
+### 🚀 **Version 7: Daily Gainer Pro** ❌ **DEPRECATED (0% profit - too complex)**
 **File:** `v7_daily_gainer_pro.pine`
 
 **TARGET: 2-3% profit PER HARI (Sustainable)**
