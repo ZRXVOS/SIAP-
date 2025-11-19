@@ -4,25 +4,38 @@
 
 ## 📁 Pilih Strategy Anda
 
-### 🚀 **Version 9a: Plan A Optimized** ⭐ **LATEST - TESTING**
+### 🎯 **Version 10: Plan C - High PF** ⭐ **LATEST - TARGET PF 4.0**
+**File:** `v10_plan_c_high_pf.pine`
+
+**V8 + Advanced Multi-Filter System:**
+- ✅ ATR Multiplier 4.0 (very selective)
+- ✅ Daily Trend Filter - Trade WITH major trend
+- ✅ Volume Filter - Only high volume breakouts
+- ✅ Confirmation candle - 1 bar validation
+- ✅ All proven base features
+
+**Target vs V8:**
+- Win Rate: 43.86% → **65-72%** (+21-28%)
+- Profit: 13.96% → **30-42%** (+16-28%)
+- Profit Factor: 2.05 → **3.5-4.2** 🎯 (target 4.0!)
+- Trades: 57 → **20-30** (ultra selective)
+
+**Status:** Testing for PF 4.0 target
+
+📖 **Baca:** `V10_PLAN_C_SETUP.md` untuk complete guide
+
+---
+
+### 🔄 **Version 9a: Plan A** (FAILED - PF went down)
 **File:** `v9a_plan_a_optimized.pine`
 
-**V8 + Simple Optimizations:**
-- ✅ ATR Multiplier 3.5 (was 3.0) - Less whipsaw
-- ✅ Confirmation candle - Wait 1 bar for validation
-- ✅ Same proven base (ATR 12, LONG only)
-- ✅ Trailing Stop (protect profit)
-- ✅ Daily limits OPTIONAL (bisa ON/OFF)
+**Results (1 Sep - 19 Nov):**
+- Profit: 14.39% (vs V8: 13.96%)
+- Win Rate: 44.44% (vs V8: 43.86%)
+- Profit Factor: 1.916 ❌ (vs V8: 2.048)
+- Conclusion: Marginal improvement, PF decreased
 
-**Target Improvements vs V8:**
-- Win Rate: 43.86% → **58-62%** (+14-18%)
-- Profit: 13.96% → **20-28%** (+6-14%)
-- Profit Factor: 2.05 → **2.5-3.0**
-- Fewer trades: 57 → **25-35** (quality over quantity)
-
-**Status:** Testing phase - backtest and compare with V8
-
-📖 **Baca:** `V9A_PLAN_A_SETUP.md` untuk testing guide
+📖 **Baca:** `V9A_PLAN_A_SETUP.md`
 
 ---
 
