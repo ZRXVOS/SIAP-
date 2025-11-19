@@ -4,7 +4,29 @@
 
 ## 📁 Pilih Strategy Anda
 
-### 🔥 **Version 8: Simple Daily Gainer** ⭐ **LATEST - SIMPLE & MUTAKHIR**
+### 🚀 **Version 9a: Plan A Optimized** ⭐ **LATEST - TESTING**
+**File:** `v9a_plan_a_optimized.pine`
+
+**V8 + Simple Optimizations:**
+- ✅ ATR Multiplier 3.5 (was 3.0) - Less whipsaw
+- ✅ Confirmation candle - Wait 1 bar for validation
+- ✅ Same proven base (ATR 12, LONG only)
+- ✅ Trailing Stop (protect profit)
+- ✅ Daily limits OPTIONAL (bisa ON/OFF)
+
+**Target Improvements vs V8:**
+- Win Rate: 43.86% → **58-62%** (+14-18%)
+- Profit: 13.96% → **20-28%** (+6-14%)
+- Profit Factor: 2.05 → **2.5-3.0**
+- Fewer trades: 57 → **25-35** (quality over quantity)
+
+**Status:** Testing phase - backtest and compare with V8
+
+📖 **Baca:** `V9A_PLAN_A_SETUP.md` untuk testing guide
+
+---
+
+### 🔥 **Version 8: Simple Daily Gainer** ⭐ **BASELINE**
 **File:** `v8_simple_daily_gainer.pine`
 
 **SIMPLE tapi POWERFUL:**
@@ -15,13 +37,16 @@
 - ✅ Position size: 0.02 lot default (adjustable)
 - ✅ Exit on Supertrend reverse
 
-**Perfect For:**
-- Semua trader (beginner to advanced)
-- Yang mau simple tapi modern
-- Flexible: dengan atau tanpa daily limits
-- Proven results
+**Actual Results (1 Sep - 19 Nov 2024):**
+- Profit: 13.96%
+- Win Rate: 43.86%
+- Profit Factor: 2.048 (Excellent!)
+- Max DD: 5.79%
 
-**Expected:** 40-70% profit per quarter, 50-60% win rate
+**Perfect For:**
+- Baseline testing
+- Simple approach
+- Quality profit factor
 
 📖 **Baca:** `V8_SETUP.md` untuk quick start
 
