@@ -290,7 +290,10 @@ if barstate.islast
     table.cell(t, 0, 13, "Daily P&L", text_color=color.white)
     table.cell(t, 1, 13, str.tostring(dailyPnLPercent, "#.##") + "%", text_color=dpCol)
 
-    filters = str.tostring(int(useDailyFilter)) + "/" + str.tostring(int(useVolumeFilter)) + "/" + str.tostring(int(useConfirmation))
+    d = useDailyFilter ? "1" : "0"
+    v = useVolumeFilter ? "1" : "0"
+    c = useConfirmation ? "1" : "0"
+    filters = d + "/" + v + "/" + c
     table.cell(t, 0, 14, "Filters (D/V/C)", text_color=color.white)
     table.cell(t, 1, 14, filters, text_color=color.yellow)
 
