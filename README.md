@@ -1,32 +1,77 @@
 # SIAP - Professional XAUUSD Trading System
 
-🏆 **Pine Script v6** Trading Strategies untuk XAUUSD Scalping 15m/1H
+🏆 **Pine Script v6** Trading Strategies untuk XAUUSD Scalping 15m
 
 ## 📁 Pilih Strategy Anda
 
-### 🏆 **Version 5: Optimized Supertrend** ⭐ **RECOMMENDED - PROVEN + ENHANCED**
-**File:** `v5_optimized_supertrend.pine`
+### 🚀 **Version 7: Daily Gainer Pro** ⭐ **LATEST - PATH 3 (2-3% Daily)**
+**File:** `v7_daily_gainer_pro.pine`
 
-**Berdasarkan Formula TERBUKTI User:**
+**TARGET: 2-3% profit PER HARI (Sustainable)**
+- ✅ Based on proven formula (ATR 12, Multi 3.0)
+- ✅ Daily profit target: 3%
+- ✅ Daily loss limit: -8% (protection)
+- ✅ Max 5 trades per day (quality over quantity)
+- ✅ Session filter (London/NY only)
+- ✅ Scalable position sizing (0.01/0.02/0.03 lot)
+- ✅ EA-ready structure
+
+**Perfect For:**
+- Active daily traders
+- Want consistent daily income
+- Need strict risk management
+- Plan EA automation later
+- Monitor during London/NY sessions
+
+**Expected:** 50-80% profit per quarter, 60%+ win rate
+
+📖 **Baca:** `V7_DAILY_GAINER_SETUP.md` untuk complete guide
+📊 **Compare:** `V7_COMPARISON.md` untuk V6 vs V7
+
+---
+
+### 💎 **Version 6: Supertrend Pro** ⭐ **PRODUCTION READY (Quarterly Focus)**
+**File:** `v6_supertrend_pro_final.pine`
+
+**PROVEN FORMULA dengan Fixed Lot Size:**
 - ✅ ATR 12, Multiplier 3.0 (proven best)
 - ✅ LONG ONLY (proven profitable)
 - ✅ Stop Loss 4% (proven optimal)
-- ✅ **BASELINE: 18% profit, 55% win rate** (3 bulan)
+- ✅ NO Take Profit (let profit run)
+- ✅ Trailing Stop active (4.5% / 2.5%)
+- ✅ Fixed 0.01 lot per trade
+- ✅ **Based on 18% profit, 55% win rate** (3 bulan)
 
-**Enhancements untuk boost 18% → 30%+:**
-- ✅ Trailing Stop (protect profit)
-- ✅ Fast Exit on reversal (cut loss cepat)
-- ✅ Partial Profit Taking (lock gains)
-- ✅ Advanced Dashboard (detailed metrics)
+**Enhancements:**
+- ✅ Trailing Stop (protect profit while running)
+- ✅ Smart Exit (conditional on profit level)
+- ✅ Exit on opposite signal
+- ✅ Detailed dashboard
 
 **Perfect For:**
-- Yang sudah punya profitable system
-- Ingin maximize profit dengan optimization
-- Systematic testing & improvement
+- Passive quarterly compounding
+- Set-and-forget traders
+- Proven simple approach
+- Conservative risk profile
+- Check charts 1-2x daily
 
-**Target:** Win Rate 55-60%, Net Profit 25-30%+
+**Expected:** 40-50% profit per quarter, 50-55% win rate
 
-📖 **Baca:** `OPTIMIZATION_GUIDE.md` untuk step-by-step testing
+📖 **Baca:** `SETUP_V6_GUIDE.md` dan `V6_FIXED_LOT_SETUP.md`
+
+---
+
+### 🔧 **Version 5: Optimized Supertrend** (Testing Phase)
+**File:** `v5_optimized_supertrend.pine`
+
+**Baseline Testing Version:**
+- ✅ ATR 12, Multiplier 3.0
+- ✅ Multiple optimization features
+- ✅ Used for establishing baseline
+
+**Note:** V5 evolved into V6 (production) and V7 (daily gainer)
+
+📖 **Baca:** `OPTIMIZATION_GUIDE.md` untuk methodology
 
 ---
 

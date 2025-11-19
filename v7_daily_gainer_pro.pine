@@ -1,0 +1,362 @@
+//@version=6
+strategy("XAUUSD Daily Gainer Pro - V7",
+         shorttitle="DG Pro V7",
+         overlay=true,
+         default_qty_type=strategy.fixed,
+         default_qty_value=0.02,
+         initial_capital=30000000,
+         commission_type=strategy.commission.cash_per_order,
+         commission_value=5,
+         slippage=2,
+         pyramiding=0,
+         currency=currency.USD,
+         calc_on_every_tick=false,
+         calc_on_order_fills=false)
+
+// ============================================================================
+// 🎯 PATH 3: SUSTAINABLE DAILY GAINER (2-3% per day)
+// ============================================================================
+// Based on proven 18% profit formula (3 months)
+// Enhanced with daily profit/loss management
+// Target: 2-3% daily gain | >60% win rate | <15% drawdown
+// ============================================================================
+
+// ============================================================================
+// 📊 CORE SETTINGS - Proven Formula
+// ============================================================================
+
+atrPeriod = input.int(12, "ATR Period", minval=1, maxval=50, group="🎯 Core Settings", tooltip="Proven: 12")
+atrMultiplier = input.float(3.0, "ATR Multiplier", minval=0.5, maxval=10.0, step=0.1, group="🎯 Core Settings", tooltip="Proven: 3.0")
+
+// ============================================================================
+// 💰 POSITION SIZE - Scalable
+// ============================================================================
+
+positionSizeOption = input.string("0.02 Lot (Moderate)", "Position Size", options=["0.01 Lot (Conservative)", "0.02 Lot (Moderate)", "0.03 Lot (Aggressive)"], group="💰 Position Size", tooltip="Choose based on risk tolerance")
+
+getLotSize() =>
+    switch positionSizeOption
+        "0.01 Lot (Conservative)" => 0.01
+        "0.02 Lot (Moderate)" => 0.02
+        "0.03 Lot (Aggressive)" => 0.03
+        => 0.02
+
+currentLotSize = getLotSize()
+
+// ============================================================================
+// 💎 RISK MANAGEMENT - Enhanced
+// ============================================================================
+
+stopLossPercent = input.float(4.0, "Stop Loss %", minval=0.1, step=0.1, group="💎 Risk Management", tooltip="Proven: 4%")
+useTakeProfit = input.bool(false, "Use Take Profit", group="💎 Risk Management", tooltip="Recommended: DISABLE for daily gainer")
+takeProfitPercent = input.float(8.0, "Take Profit %", minval=0.1, step=0.1, group="💎 Risk Management")
+
+// ============================================================================
+// 🚀 TRAILING STOP - Protect Profits
+// ============================================================================
+
+useTrailingStop = input.bool(true, "✅ Enable Trailing Stop", group="🚀 Trailing Stop", tooltip="RECOMMENDED")
+trailActivationPercent = input.float(4.5, "Trail Activation %", minval=1.0, step=0.5, group="🚀 Trailing Stop", tooltip="Start trailing after this profit")
+trailOffsetPercent = input.float(2.5, "Trail Offset %", minval=0.5, step=0.5, group="🚀 Trailing Stop", tooltip="Distance from peak price")
+
+// ============================================================================
+// 📅 DAILY LIMITS - PATH 3 Specific
+// ============================================================================
+
+useDailyProfitLimit = input.bool(true, "✅ Enable Daily Profit Target", group="📅 Daily Limits", tooltip="Stop trading when daily target reached")
+dailyProfitTarget = input.float(3.0, "Daily Profit Target %", minval=0.5, step=0.5, group="📅 Daily Limits", tooltip="PATH 3: 2-3% daily")
+
+useDailyLossLimit = input.bool(true, "✅ Enable Daily Loss Limit", group="📅 Daily Limits", tooltip="Stop trading when daily loss limit hit")
+dailyLossLimit = input.float(8.0, "Daily Loss Limit %", minval=1.0, step=0.5, group="📅 Daily Limits", tooltip="Prevent blowing account")
+
+useMaxTradesPerDay = input.bool(true, "✅ Enable Max Trades Per Day", group="📅 Daily Limits", tooltip="Quality over quantity")
+maxTradesPerDay = input.int(5, "Max Trades Per Day", minval=1, maxval=20, group="📅 Daily Limits", tooltip="PATH 3: Max 5 trades")
+
+// ============================================================================
+// ⏰ SESSION FILTER - XAUUSD Optimal Times
+// ============================================================================
+
+useSessionFilter = input.bool(true, "✅ Enable Session Filter", group="⏰ Session Filter", tooltip="Trade only during active sessions")
+tradeLondonSession = input.bool(true, "Trade London Session", group="⏰ Session Filter", tooltip="08:00-17:00 GMT")
+tradeNYSession = input.bool(true, "Trade NY Session", group="⏰ Session Filter", tooltip="13:00-22:00 GMT")
+
+londonOpen = input.int(8, "London Open (Hour GMT)", minval=0, maxval=23, group="⏰ Session Filter")
+londonClose = input.int(17, "London Close (Hour GMT)", minval=0, maxval=23, group="⏰ Session Filter")
+nyOpen = input.int(13, "NY Open (Hour GMT)", minval=0, maxval=23, group="⏰ Session Filter")
+nyClose = input.int(22, "NY Close (Hour GMT)", minval=0, maxval=23, group="⏰ Session Filter")
+
+// ============================================================================
+// 🎚️ EXIT STRATEGY
+// ============================================================================
+
+exitOnOpposite = input.bool(true, "✅ Exit on Opposite Signal", group="🎚️ Exit Strategy", tooltip="Close when Supertrend reverses")
+useSmartExit = input.bool(true, "Smart Exit (Protect Profits)", group="🎚️ Exit Strategy", tooltip="Only fast exit if in loss")
+
+// ============================================================================
+// 📊 TRADE DIRECTION
+// ============================================================================
+
+allowLong = input.bool(true, "✅ Allow Long", group="📊 Trade Direction")
+allowShort = input.bool(false, "Allow Short", group="📊 Trade Direction", tooltip="Proven: LONG only")
+
+// ============================================================================
+// 🎨 DISPLAY
+// ============================================================================
+
+showDashboard = input.bool(true, "Show Dashboard", group="🎨 Display")
+showSignals = input.bool(true, "Show Signals", group="🎨 Display")
+showDailyStats = input.bool(true, "Show Daily Stats", group="🎨 Display")
+
+// ============================================================================
+// 📊 CALCULATIONS
+// ============================================================================
+
+[supertrend, direction] = ta.supertrend(atrMultiplier, atrPeriod)
+isBullish = direction < 0
+isBearish = direction > 0
+
+bullishFlip = ta.change(direction) < 0
+bearishFlip = ta.change(direction) > 0
+
+atr = ta.atr(atrPeriod)
+
+// ============================================================================
+// ⏰ SESSION DETECTION
+// ============================================================================
+
+gmtHour = hour(time, "GMT")
+isLondonSession = gmtHour >= londonOpen and gmtHour < londonClose
+isNYSession = gmtHour >= nyOpen and gmtHour < nyClose
+sessionActive = not useSessionFilter or (tradeLondonSession and isLondonSession) or (tradeNYSession and isNYSession)
+
+// ============================================================================
+// 📅 DAILY TRACKING
+// ============================================================================
+
+var float dailyStartEquity = strategy.initial_capital
+var int dailyTradeCount = 0
+var bool dailyLimitReached = false
+var int lastDay = 0
+
+currentDay = dayofmonth(time)
+isNewDay = currentDay != lastDay
+
+if isNewDay
+    dailyStartEquity := strategy.equity
+    dailyTradeCount := 0
+    dailyLimitReached := false
+    lastDay := currentDay
+
+currentDailyPnL = strategy.equity - dailyStartEquity
+currentDailyPnLPercent = (currentDailyPnL / dailyStartEquity) * 100
+
+// Check daily limits
+if useDailyProfitLimit and currentDailyPnLPercent >= dailyProfitTarget
+    dailyLimitReached := true
+
+if useDailyLossLimit and currentDailyPnLPercent <= -dailyLossLimit
+    dailyLimitReached := true
+
+if useMaxTradesPerDay and dailyTradeCount >= maxTradesPerDay
+    dailyLimitReached := true
+
+// ============================================================================
+// 🎯 ENTRY CONDITIONS
+// ============================================================================
+
+longCondition = allowLong and bullishFlip and strategy.position_size == 0 and sessionActive and not dailyLimitReached
+shortCondition = allowShort and bearishFlip and strategy.position_size == 0 and sessionActive and not dailyLimitReached
+
+// ============================================================================
+// 💼 POSITION MANAGEMENT
+// ============================================================================
+
+var float entryPrice = na
+var float stopLossPrice = na
+var float takeProfitPrice = na
+var float trailActivationPrice = na
+var float currentTrailStop = na
+
+// LONG ENTRY
+if longCondition
+    entryPrice := close
+    stopLossPrice := close * (1 - stopLossPercent / 100)
+    takeProfitPrice := useTakeProfit ? close * (1 + takeProfitPercent / 100) : na
+    trailActivationPrice := useTrailingStop ? close * (1 + trailActivationPercent / 100) : na
+    currentTrailStop := na
+    dailyTradeCount := dailyTradeCount + 1
+    strategy.entry("Long", strategy.long, qty=currentLotSize)
+
+// SHORT ENTRY
+if shortCondition
+    entryPrice := close
+    stopLossPrice := close * (1 + stopLossPercent / 100)
+    takeProfitPrice := useTakeProfit ? close * (1 - takeProfitPercent / 100) : na
+    trailActivationPrice := useTrailingStop ? close * (1 - trailActivationPercent / 100) : na
+    currentTrailStop := na
+    dailyTradeCount := dailyTradeCount + 1
+    strategy.entry("Short", strategy.short, qty=currentLotSize)
+
+// ============================================================================
+// 🚀 TRAILING STOP LOGIC
+// ============================================================================
+
+if strategy.position_size > 0 and useTrailingStop
+    if not na(trailActivationPrice) and close >= trailActivationPrice
+        newTrailStop = close * (1 - trailOffsetPercent / 100)
+        currentTrailStop := na(currentTrailStop) ? newTrailStop : math.max(currentTrailStop, newTrailStop)
+
+if strategy.position_size < 0 and useTrailingStop
+    if not na(trailActivationPrice) and close <= trailActivationPrice
+        newTrailStop = close * (1 + trailOffsetPercent / 100)
+        currentTrailStop := na(currentTrailStop) ? newTrailStop : math.min(currentTrailStop, newTrailStop)
+
+// ============================================================================
+// 📤 EXIT MANAGEMENT
+// ============================================================================
+
+currentPnLPercent = strategy.position_size > 0 ? ((close - entryPrice) / entryPrice * 100) : strategy.position_size < 0 ? ((entryPrice - close) / entryPrice * 100) : 0
+
+// Exit Orders
+if strategy.position_size > 0
+    if not na(currentTrailStop)
+        strategy.exit("Exit Long", "Long", stop=math.max(stopLossPrice, currentTrailStop), limit=takeProfitPrice)
+    else if useTakeProfit
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice, limit=takeProfitPrice)
+    else
+        strategy.exit("Exit Long", "Long", stop=stopLossPrice)
+
+if strategy.position_size < 0
+    if not na(currentTrailStop)
+        strategy.exit("Exit Short", "Short", stop=math.min(stopLossPrice, currentTrailStop), limit=takeProfitPrice)
+    else if useTakeProfit
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice, limit=takeProfitPrice)
+    else
+        strategy.exit("Exit Short", "Short", stop=stopLossPrice)
+
+// Smart Exit on Opposite Signal
+if exitOnOpposite
+    if bearishFlip and strategy.position_size > 0
+        if useSmartExit
+            if currentPnLPercent < 2.0
+                strategy.close("Long", comment="ST Reversal")
+        else
+            strategy.close("Long", comment="ST Reversal")
+        currentTrailStop := na
+    if bullishFlip and strategy.position_size < 0
+        if useSmartExit
+            if currentPnLPercent < 2.0
+                strategy.close("Short", comment="ST Reversal")
+        else
+            strategy.close("Short", comment="ST Reversal")
+        currentTrailStop := na
+
+// Force close all positions when daily limit reached
+if dailyLimitReached and strategy.position_size != 0
+    if strategy.position_size > 0
+        strategy.close("Long", comment="Daily Limit")
+    if strategy.position_size < 0
+        strategy.close("Short", comment="Daily Limit")
+    currentTrailStop := na
+
+// ============================================================================
+// 🎨 PLOTTING
+// ============================================================================
+
+plot(isBullish ? supertrend : na, "ST Up", color=color.new(color.lime, 0), linewidth=3)
+plot(isBearish ? supertrend : na, "ST Down", color=color.new(color.red, 0), linewidth=3)
+
+plotshape(showSignals and longCondition, "Long", shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.normal, text="BUY")
+plotshape(showSignals and shortCondition, "Short", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal, text="SELL")
+
+bgcolor(isBullish ? color.new(color.lime, 97) : color.new(color.red, 97))
+
+// SL/TP Lines
+plot(strategy.position_size > 0 ? stopLossPrice : na, "SL", color.new(color.red, 0), linewidth=2, style=plot.style_cross)
+plot(strategy.position_size > 0 and not na(currentTrailStop) ? currentTrailStop : na, "Trail", color.new(color.orange, 0), linewidth=2, style=plot.style_circles)
+plot(strategy.position_size > 0 and not na(takeProfitPrice) ? takeProfitPrice : na, "TP", color.new(color.green, 0), linewidth=1, style=plot.style_cross)
+
+// ============================================================================
+// 📊 PERFORMANCE DASHBOARD
+// ============================================================================
+
+if showDashboard and barstate.islast
+    var table dash = table.new(position.top_right, 2, 14, bgcolor=color.new(color.black, 85), border_width=2)
+    table.cell(dash, 0, 0, "📊 DAILY GAINER PRO V7", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.normal)
+    table.cell(dash, 1, 0, "", bgcolor=color.new(color.blue, 70))
+    winRate = strategy.closedtrades > 0 ? strategy.wintrades / strategy.closedtrades * 100 : 0
+    wrColor = winRate >= 60 ? color.lime : winRate >= 50 ? color.yellow : color.red
+    table.cell(dash, 0, 1, "Win Rate", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 1, str.tostring(winRate, "#.##") + "%", text_color=wrColor, text_size=size.small)
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : 0
+    pfColor = pf >= 2.0 ? color.lime : pf >= 1.5 ? color.yellow : color.red
+    table.cell(dash, 0, 2, "Profit Factor", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 2, str.tostring(pf, "#.##"), text_color=pfColor, text_size=size.small)
+    table.cell(dash, 0, 3, "Total Trades", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 3, str.tostring(strategy.closedtrades), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 4, "Wins / Losses", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 4, str.tostring(strategy.wintrades) + " / " + str.tostring(strategy.losstrades), text_color=color.white, text_size=size.small)
+    netProfitPct = (strategy.netprofit / strategy.initial_capital) * 100
+    npColor = netProfitPct >= 50 ? color.lime : netProfitPct >= 30 ? color.yellow : netProfitPct > 0 ? color.orange : color.red
+    table.cell(dash, 0, 5, "Profit %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 5, str.tostring(netProfitPct, "#.##") + "%", text_color=npColor, text_size=size.small)
+    maxDD = strategy.max_drawdown / strategy.initial_capital * 100
+    ddColor = maxDD < 10 ? color.lime : maxDD < 20 ? color.yellow : color.red
+    table.cell(dash, 0, 6, "Max DD", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 6, str.tostring(maxDD, "#.##") + "%", text_color=ddColor, text_size=size.small)
+    avgWin = strategy.wintrades > 0 ? (strategy.grossprofit / strategy.wintrades / strategy.initial_capital * 100) : 0
+    table.cell(dash, 0, 7, "Avg Win %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 7, str.tostring(avgWin, "#.##") + "%", text_color=color.lime, text_size=size.small)
+    avgLoss = strategy.losstrades > 0 ? (strategy.grossloss / strategy.losstrades / strategy.initial_capital * 100) : 0
+    table.cell(dash, 0, 8, "Avg Loss %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 8, str.tostring(avgLoss, "#.##") + "%", text_color=color.red, text_size=size.small)
+    rr = avgLoss > 0 ? avgWin / avgLoss : 0
+    rrColor = rr >= 2.5 ? color.lime : rr >= 2.0 ? color.yellow : color.red
+    table.cell(dash, 0, 9, "R:R Ratio", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 9, str.tostring(rr, "#.##") + ":1", text_color=rrColor, text_size=size.small)
+    table.cell(dash, 0, 10, "Trend", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 10, isBullish ? "BULL ▲" : "BEAR ▼", text_color=isBullish ? color.lime : color.red, text_size=size.small)
+    posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "NONE"
+    posColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(dash, 0, 11, "Position", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 11, posText, text_color=posColor, text_size=size.small)
+    sessionText = sessionActive ? "ACTIVE ✓" : "CLOSED ✗"
+    sessionColor = sessionActive ? color.lime : color.red
+    table.cell(dash, 0, 12, "Session", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 12, sessionText, text_color=sessionColor, text_size=size.small)
+    lotText = str.tostring(currentLotSize, "#.##") + " lot"
+    table.cell(dash, 0, 13, "Lot Size", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 13, lotText, text_color=color.yellow, text_size=size.small)
+
+// ============================================================================
+// 📊 DAILY STATS DASHBOARD
+// ============================================================================
+
+if showDailyStats and barstate.islast
+    var table dailyDash = table.new(position.top_left, 2, 6, bgcolor=color.new(color.black, 85), border_width=2)
+    table.cell(dailyDash, 0, 0, "📅 DAILY STATS", text_color=color.white, bgcolor=color.new(color.purple, 70), text_size=size.normal)
+    table.cell(dailyDash, 1, 0, "", bgcolor=color.new(color.purple, 70))
+    dailyPnLColor = currentDailyPnLPercent >= dailyProfitTarget ? color.lime : currentDailyPnLPercent >= 0 ? color.yellow : currentDailyPnLPercent <= -dailyLossLimit ? color.red : color.orange
+    table.cell(dailyDash, 0, 1, "Daily P/L %", text_color=color.white, text_size=size.small)
+    table.cell(dailyDash, 1, 1, str.tostring(currentDailyPnLPercent, "#.##") + "%", text_color=dailyPnLColor, text_size=size.small)
+    table.cell(dailyDash, 0, 2, "Daily Target", text_color=color.white, text_size=size.small)
+    table.cell(dailyDash, 1, 2, str.tostring(dailyProfitTarget, "#.#") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(dailyDash, 0, 3, "Daily Limit", text_color=color.white, text_size=size.small)
+    table.cell(dailyDash, 1, 3, "-" + str.tostring(dailyLossLimit, "#.#") + "%", text_color=color.red, text_size=size.small)
+    tradeCountColor = dailyTradeCount >= maxTradesPerDay ? color.red : dailyTradeCount >= maxTradesPerDay - 1 ? color.yellow : color.lime
+    table.cell(dailyDash, 0, 4, "Today Trades", text_color=color.white, text_size=size.small)
+    table.cell(dailyDash, 1, 4, str.tostring(dailyTradeCount) + "/" + str.tostring(maxTradesPerDay), text_color=tradeCountColor, text_size=size.small)
+    limitStatus = dailyLimitReached ? "STOPPED ✗" : "ACTIVE ✓"
+    limitColor = dailyLimitReached ? color.red : color.lime
+    table.cell(dailyDash, 0, 5, "Status", text_color=color.white, text_size=size.small)
+    table.cell(dailyDash, 1, 5, limitStatus, text_color=limitColor, text_size=size.small)
+
+// ============================================================================
+// 🔔 ALERTS
+// ============================================================================
+
+alertcondition(longCondition, "🟢 LONG", "XAUUSD LONG @ {{close}}")
+alertcondition(shortCondition, "🔴 SHORT", "XAUUSD SHORT @ {{close}}")
+alertcondition(bearishFlip and strategy.position_size > 0, "⚠️ Exit Long", "Close LONG @ {{close}}")
+alertcondition(bullishFlip and strategy.position_size < 0, "⚠️ Exit Short", "Close SHORT @ {{close}}")
+alertcondition(dailyLimitReached, "🛑 Daily Limit", "Daily limit reached - Trading stopped")
