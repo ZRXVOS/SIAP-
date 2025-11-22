@@ -53,7 +53,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pickup_ids'])) {
                 $transfer_id = $stmt->insert_id;
                 $stmt->close();
 
+                // Update status pickup menjadi transferred
                 $conn->query("UPDATE pickups SET status = 'transferred', transfer_id = $transfer_id, updated_at = NOW() WHERE id IN ($ids_string)");
+
+                // Update status handover yang berisi pickup ini (jika semua pickup sudah transferred)
+                // Cari handover yang statusnya 'validated'
+                $query_handovers = "SELECT DISTINCT h.id, h.pickup_ids FROM handovers h WHERE h.status = 'validated'";
+                $result_handovers = $conn->query($query_handovers);
+
+                if ($result_handovers) {
+                    while ($handover = $result_handovers->fetch_assoc()) {
+                        $handover_pickup_ids = json_decode($handover['pickup_ids'], true) ?? [];
+
+                        if (!empty($handover_pickup_ids)) {
+                            $handover_ids_str = implode(',', array_map('intval', $handover_pickup_ids));
+
+                            // Cek apakah ada pickup yang belum transferred di handover ini
+                            $check_query = "SELECT COUNT(*) as c FROM pickups WHERE id IN ($handover_ids_str) AND status != 'transferred'";
+                            $check = $conn->query($check_query)->fetch_assoc();
+
+                            // Jika semua pickup sudah transferred, update status handover
+                            if ($check['c'] == 0) {
+                                $conn->query("UPDATE handovers SET status = 'transferred', updated_at = NOW() WHERE id = " . $handover['id']);
+                            }
+                        }
+                    }
+                }
+
                 $conn->commit();
 
                 $success = "Transfer berhasil! " . count($pickup_ids) . " pickup, total " . format_rupiah($total_transferred);
