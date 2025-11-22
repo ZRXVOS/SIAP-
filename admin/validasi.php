@@ -1,8 +1,8 @@
 <?php
 /**
  * FILE: admin/validasi.php
- * FUNGSI: Validasi penerimaan uang dari kasir - MODERN & COMPACT DESIGN
- * VERSION: 2.0 - Enhanced UX dengan Hidden Notes
+ * FUNGSI: Validasi penerimaan uang dari kasir - CLEAN & SIMPLE
+ * VERSION: 3.0 - Clean design per-pickup validation
  */
 
 require_once '../config.php';
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
 
                 $conn->commit();
-                $success = "Validasi berhasil! Pickup #$pickup_id - Jumlah diterima: " . format_rupiah($actual_amount) . ($difference != 0 ? ", Selisih: " . format_rupiah($difference) : "");
+                $success = "✅ Validasi berhasil! Pickup #$pickup_id - " . format_rupiah($actual_amount) . ($difference != 0 ? " (Selisih: " . format_rupiah($difference) . ")" : "");
 
             } catch (Exception $e) {
                 $conn->rollback();
@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
 
                 $conn->commit();
-                $success = "Pickup #$pickup_id ditolak dan dikembalikan ke kasir.";
+                $success = "❌ Pickup #$pickup_id ditolak dan dikembalikan ke kasir.";
             }
         } catch (Exception $e) {
             $conn->rollback();
@@ -131,7 +131,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Validasi Penerimaan - LondriPedia</title>
+    <title>Validasi Penerimaan</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -163,7 +163,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
         }
         .back-btn:hover { opacity: 1; background: rgba(255,255,255,0.25); }
 
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
 
         .alert {
             padding: 12px 16px;
@@ -228,7 +228,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
             background: #f8fafc;
             padding: 14px 16px;
             text-align: left;
-            font-size: 12px;
+            font-size: 11px;
             color: #64748b;
             font-weight: 600;
             text-transform: uppercase;
@@ -236,73 +236,47 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
             border-bottom: 2px solid #e2e8f0;
         }
 
+        th:last-child { text-align: center; }
+
         td {
             padding: 16px;
             border-bottom: 1px solid #f1f5f9;
             vertical-align: middle;
+            font-size: 14px;
         }
 
         tr:last-child td { border-bottom: none; }
 
-        tr {
-            transition: all 0.2s ease;
+        tbody tr {
+            transition: background-color 0.15s ease;
         }
 
-        tr:hover {
+        tbody tr:hover {
             background: #faf5ff;
-            border-left: 4px solid #8b5cf6;
         }
 
         .pickup-id {
             font-weight: 600;
             color: #334155;
-            font-size: 14px;
         }
 
-        /* Outlet Badge */
-        .outlet-badge {
+        /* Outlet Badges */
+        .outlet-name {
             display: inline-block;
-            padding: 4px 10px;
+            padding: 4px 12px;
             border-radius: 20px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
-            margin-right: 4px;
-            transition: transform 0.2s;
-        }
-        .outlet-badge:hover {
-            transform: scale(1.05);
         }
 
-        /* Monyonyo = Biru */
         .outlet-monyonyo {
             background: #dbeafe;
             color: #1e40af;
         }
 
-        /* LondriPedia = Hijau */
         .outlet-londripedia {
             background: #d1fae5;
             color: #065f46;
-        }
-
-        /* Outlet dengan catatan - clickable */
-        .outlet-with-notes {
-            cursor: pointer;
-            font-weight: 700;
-            text-decoration: underline;
-            text-decoration-style: dotted;
-            position: relative;
-        }
-
-        .outlet-with-notes::after {
-            content: "💬";
-            margin-left: 4px;
-            font-size: 12px;
-        }
-
-        .outlet-with-notes:hover {
-            transform: scale(1.08);
-            text-decoration-style: solid;
         }
 
         .date-text {
@@ -313,39 +287,48 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
         .amount {
             font-weight: 600;
             color: #059669;
-            font-size: 14px;
         }
 
         /* Action Buttons */
+        td:last-child {
+            text-align: center;
+        }
+
         .action-buttons {
             display: flex;
             gap: 8px;
+            justify-content: center;
         }
 
         .btn-action {
-            padding: 8px 12px;
+            width: 36px;
+            height: 36px;
             border: none;
             border-radius: 8px;
-            font-size: 16px;
+            font-size: 18px;
             cursor: pointer;
             transition: all 0.2s;
-            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .btn-validate {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            background: #10b981;
             color: white;
         }
         .btn-validate:hover {
+            background: #059669;
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(16,185,129,0.3);
         }
 
         .btn-reject {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            background: #ef4444;
             color: white;
         }
         .btn-reject:hover {
+            background: #dc2626;
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(239,68,68,0.3);
         }
@@ -491,28 +474,6 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
             background: #e2e8f0;
         }
 
-        /* Notes Popup */
-        .notes-popup {
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
-            padding: 16px;
-            border-radius: 8px;
-            margin: 16px 0;
-        }
-
-        .notes-popup .label {
-            font-size: 12px;
-            color: #92400e;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .notes-popup .text {
-            font-size: 14px;
-            color: #78350f;
-            line-height: 1.5;
-        }
-
         /* Empty State */
         .empty-state {
             text-align: center;
@@ -524,9 +485,8 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
 
         @media (max-width: 768px) {
             .container { padding: 12px; }
-            th, td { padding: 12px; font-size: 12px; }
-            .action-buttons { flex-direction: column; }
-            .btn-action { width: 100%; }
+            th, td { padding: 10px 8px; font-size: 12px; }
+            .btn-action { width: 32px; height: 32px; font-size: 16px; }
         }
     </style>
 </head>
@@ -538,21 +498,21 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
 
     <div class="container">
         <?php if ($success): ?>
-            <div class="alert alert-success">✓ <?php echo $success; ?></div>
+            <div class="alert alert-success"><?php echo $success; ?></div>
         <?php endif; ?>
         <?php if ($error): ?>
-            <div class="alert alert-error">! <?php echo $error; ?></div>
+            <div class="alert alert-error">❌ <?php echo $error; ?></div>
         <?php endif; ?>
 
         <div class="top-section">
             <div class="summary-text">
-                📊 Menunggu validasi: <span class="count"><?php echo $total['c']; ?></span> pickup
+                Menunggu validasi: <span class="count"><?php echo $total['c']; ?></span> pickup
                 &nbsp;•&nbsp;
                 Total: <span class="amount"><?php echo format_rupiah($total['t']); ?></span>
             </div>
             <form class="filter" method="GET">
                 <select name="outlet" onchange="this.form.submit()">
-                    <option value="0">🔍 Semua Outlet</option>
+                    <option value="0">Semua Outlet</option>
                     <?php while ($o = $outlets->fetch_assoc()): ?>
                         <option value="<?php echo $o['id']; ?>" <?php echo $filter_outlet == $o['id'] ? 'selected' : ''; ?>>
                             <?php echo $o['outlet_name']; ?>
@@ -579,32 +539,30 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
                     <?php while ($p = $result->fetch_assoc()):
                         $periode_date = date('d/m/y', strtotime($p['pickup_date']));
                         $tgl_setor = date('d/m/y', strtotime($p['handover_created_at']));
-                        $has_notes = !empty($p['handover_notes']);
 
                         // Determine outlet class
                         $outlet_class = (stripos($p['outlet_name'], 'monyonyo') !== false) ? 'outlet-monyonyo' : 'outlet-londripedia';
-                        $note_class = $has_notes ? 'outlet-with-notes' : '';
-                        $onclick = $has_notes ? "showNotes('{$p['pickup_id']}', '" . htmlspecialchars(addslashes($p['handover_notes'])) . "')" : '';
                     ?>
                     <tr>
                         <td><span class="pickup-id">#<?php echo $p['pickup_id']; ?></span></td>
                         <td>
-                            <span class="outlet-badge <?php echo $outlet_class; ?> <?php echo $note_class; ?>"
-                                  onclick="<?php echo $onclick; ?>">
+                            <span class="outlet-name <?php echo $outlet_class; ?>">
                                 <?php echo htmlspecialchars($p['outlet_name']); ?>
                             </span>
                         </td>
-                        <td class="date-text">📅 <?php echo $periode_date; ?></td>
-                        <td class="date-text">✋ <?php echo $tgl_setor; ?></td>
-                        <td><span class="amount">💰 <?php echo format_rupiah($p['amount_taken']); ?></span></td>
+                        <td class="date-text"><?php echo $periode_date; ?></td>
+                        <td class="date-text"><?php echo $tgl_setor; ?></td>
+                        <td><span class="amount"><?php echo format_rupiah($p['amount_taken']); ?></span></td>
                         <td>
                             <div class="action-buttons">
                                 <button class="btn-action btn-validate"
-                                        onclick="showValidateModal(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>, '<?php echo $periode_date; ?>', '<?php echo $tgl_setor; ?>')">
+                                        onclick="showValidateModal(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>, '<?php echo $periode_date; ?>', '<?php echo $tgl_setor; ?>')"
+                                        title="Validasi">
                                     ✓
                                 </button>
                                 <button class="btn-action btn-reject"
-                                        onclick="confirmReject(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>)">
+                                        onclick="confirmReject(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>)"
+                                        title="Tolak">
                                     ✗
                                 </button>
                             </div>
@@ -671,32 +629,14 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
         </div>
     </div>
 
-    <!-- Modal Notes -->
-    <div id="notesModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                💬 Catatan Pickup <span id="notesPickupId"></span>
-            </div>
-            <div class="modal-body">
-                <div class="notes-popup">
-                    <div class="label">Catatan dari Kasir:</div>
-                    <div class="text" id="notesContent"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn-modal btn-secondary" onclick="closeModal('notesModal')">Tutup</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Modal Reject -->
     <div id="rejectModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                ❌ Tolak Setoran
+                ❌ Tolak Pickup
             </div>
             <div class="modal-body">
-                <p style="margin-bottom: 16px; color: #64748b;">Yakin tolak pickup ini?</p>
+                <p style="margin-bottom: 16px; color: #64748b;">Yakin ingin menolak pickup ini?</p>
                 <div class="info-row">
                     <span class="info-label">Pickup:</span>
                     <span class="info-value" id="rejectPickupId"></span>
@@ -717,7 +657,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-modal btn-secondary" onclick="closeModal('rejectModal')">Batal</button>
-                <button type="submit" form="rejectForm" class="btn-modal btn-primary" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">❌ Ya, Tolak</button>
+                <button type="submit" form="rejectForm" class="btn-modal btn-primary" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">❌ Tolak</button>
             </div>
         </div>
     </div>
@@ -736,12 +676,6 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t
             document.getElementById('validatePickupId').value = id;
             document.getElementById('actualAmount').value = amount;
             document.getElementById('validateModal').classList.add('show');
-        }
-
-        function showNotes(id, notes) {
-            document.getElementById('notesPickupId').textContent = '#' + id;
-            document.getElementById('notesContent').textContent = notes;
-            document.getElementById('notesModal').classList.add('show');
         }
 
         function confirmReject(id, outlet, amount) {
