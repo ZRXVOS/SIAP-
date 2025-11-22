@@ -47,11 +47,13 @@ $result_transfer = $conn->query($query_transfer);
 $transfer_bulan_ini = $result_transfer->fetch_assoc()['total'];
 
 // 4. SETORAN TERBARU (10 record) - dari handovers
+// Filter: exclude handovers dengan total_amount = 0 (anomali/data tidak valid)
 $query_recent = "SELECT h.id, h.handover_date, h.total_amount, h.actual_amount_received, h.difference, h.status,
                  GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets
                  FROM handovers h
                  LEFT JOIN pickups p ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
                  LEFT JOIN outlets o ON p.outlet_id = o.id
+                 WHERE h.total_amount > 0
                  GROUP BY h.id
                  ORDER BY h.created_at DESC
                  LIMIT 10";
