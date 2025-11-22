@@ -88,12 +88,10 @@ $filter_outlet = isset($_GET['outlet']) ? intval($_GET['outlet']) : 0;
 
 // Get handovers pending validation
 $query = "SELECT h.*,
-          GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets,
-          u.full_name as kasir_name
+          GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets
           FROM handovers h
           LEFT JOIN pickups p ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
           LEFT JOIN outlets o ON p.outlet_id = o.id
-          LEFT JOIN users u ON h.recorded_by = u.id
           WHERE h.status = 'pending_validation'";
 if ($filter_outlet > 0) $query .= " AND o.id = $filter_outlet";
 $query .= " GROUP BY h.id ORDER BY h.created_at ASC";
