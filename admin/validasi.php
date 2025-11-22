@@ -13,68 +13,88 @@ $success = '';
 $error = '';
 $user_id = $_SESSION['user_id'];
 
-// Proses validasi
+// Proses validasi PER PICKUP (bukan per handover)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    $handover_id = intval($_POST['handover_id']);
+    $pickup_id = intval($_POST['pickup_id']);
 
     if ($_POST['action'] === 'validate') {
         $actual_amount = floatval(str_replace(['.', ','], '', $_POST['actual_amount']));
         $validation_notes = clean_input($_POST['validation_notes'] ?? '');
 
-        // Get handover data
-        $query = "SELECT * FROM handovers WHERE id = $handover_id";
+        // Get pickup data
+        $query = "SELECT p.*, h.id as handover_id, h.pickup_ids
+                  FROM pickups p
+                  JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
+                  WHERE p.id = $pickup_id AND p.status = 'handed_over'";
         $result = $conn->query($query);
 
         if ($result && $result->num_rows > 0) {
-            $handover = $result->fetch_assoc();
-            $total_amount = $handover['total_amount'];
-            $difference = $actual_amount - $total_amount;
+            $pickup = $result->fetch_assoc();
+            $amount_taken = $pickup['amount_taken'];
+            $difference = $actual_amount - $amount_taken;
+            $handover_id = $pickup['handover_id'];
 
             $conn->begin_transaction();
             try {
-                // Update handover
-                $stmt = $conn->prepare("UPDATE handovers SET status = 'validated', actual_amount_received = ?, difference = ?, validation_notes = ?, validated_by = ?, validated_at = NOW() WHERE id = ?");
-                $stmt->bind_param("ddsii", $actual_amount, $difference, $validation_notes, $user_id, $handover_id);
+                // Update pickup
+                $stmt = $conn->prepare("UPDATE pickups SET status = 'validated', actual_amount_received = ?, updated_at = NOW() WHERE id = ?");
+                $stmt->bind_param("di", $actual_amount, $pickup_id);
                 $stmt->execute();
 
-                // Update pickups
-                $pickup_ids = json_decode($handover['pickup_ids'], true);
+                // Cek apakah semua pickup di handover ini sudah validated
+                $pickup_ids = json_decode($pickup['pickup_ids'], true);
                 if (!empty($pickup_ids)) {
                     $ids_string = implode(',', array_map('intval', $pickup_ids));
-                    $conn->query("UPDATE pickups SET status = 'validated', actual_amount_received = amount_taken, updated_at = NOW() WHERE id IN ($ids_string)");
+                    $pending_count = $conn->query("SELECT COUNT(*) as c FROM pickups WHERE id IN ($ids_string) AND status != 'validated'")->fetch_assoc()['c'];
+
+                    // Jika semua pickup sudah validated, update handover juga
+                    if ($pending_count == 0) {
+                        $conn->query("UPDATE handovers SET status = 'validated', validated_by = $user_id, validated_at = NOW() WHERE id = $handover_id");
+                    }
                 }
 
                 $conn->commit();
-                $success = "Validasi berhasil! Jumlah diterima: " . format_rupiah($actual_amount) . ($difference != 0 ? ", Selisih: " . format_rupiah($difference) : "");
+                $success = "Validasi berhasil! Pickup #$pickup_id - Jumlah diterima: " . format_rupiah($actual_amount) . ($difference != 0 ? ", Selisih: " . format_rupiah($difference) : "");
 
             } catch (Exception $e) {
                 $conn->rollback();
                 $error = $e->getMessage();
             }
+        } else {
+            $error = "Pickup tidak ditemukan atau sudah divalidasi!";
         }
 
     } elseif ($_POST['action'] === 'reject') {
-        // Tolak handover - kembalikan ke pending
+        // Tolak pickup - kembalikan ke pending_handover
         $conn->begin_transaction();
         try {
-            $query = "SELECT pickup_ids FROM handovers WHERE id = $handover_id";
+            $query = "SELECT p.*, h.id as handover_id, h.pickup_ids
+                      FROM pickups p
+                      JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
+                      WHERE p.id = $pickup_id";
             $result = $conn->query($query);
 
             if ($result && $result->num_rows > 0) {
-                $handover = $result->fetch_assoc();
-                $pickup_ids = json_decode($handover['pickup_ids'], true);
+                $pickup = $result->fetch_assoc();
+                $handover_id = $pickup['handover_id'];
 
-                // Update handover
-                $conn->query("UPDATE handovers SET status = 'rejected', validated_by = $user_id, validated_at = NOW() WHERE id = $handover_id");
+                // Update pickup kembali ke pending_handover
+                $conn->query("UPDATE pickups SET status = 'pending_handover', updated_at = NOW() WHERE id = $pickup_id");
 
-                // Update pickups kembali ke pending_handover
+                // Cek apakah masih ada pickup lain di handover ini
+                $pickup_ids = json_decode($pickup['pickup_ids'], true);
                 if (!empty($pickup_ids)) {
                     $ids_string = implode(',', array_map('intval', $pickup_ids));
-                    $conn->query("UPDATE pickups SET status = 'pending_handover', updated_at = NOW() WHERE id IN ($ids_string)");
+                    $remaining_count = $conn->query("SELECT COUNT(*) as c FROM pickups WHERE id IN ($ids_string) AND status = 'handed_over'")->fetch_assoc()['c'];
+
+                    // Jika tidak ada lagi pickup yang handed_over, update handover jadi rejected
+                    if ($remaining_count == 0) {
+                        $conn->query("UPDATE handovers SET status = 'rejected', validated_by = $user_id, validated_at = NOW() WHERE id = $handover_id");
+                    }
                 }
 
                 $conn->commit();
-                $success = "Setoran ditolak dan dikembalikan ke kasir.";
+                $success = "Pickup #$pickup_id ditolak dan dikembalikan ke kasir.";
             }
         } catch (Exception $e) {
             $conn->rollback();
@@ -86,19 +106,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // Filter
 $filter_outlet = isset($_GET['outlet']) ? intval($_GET['outlet']) : 0;
 
-// Get handovers pending validation
-$query = "SELECT h.*,
-          GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets
-          FROM handovers h
-          LEFT JOIN pickups p ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
-          LEFT JOIN outlets o ON p.outlet_id = o.id
-          WHERE h.status = 'pending_validation'";
-if ($filter_outlet > 0) $query .= " AND o.id = $filter_outlet";
-$query .= " GROUP BY h.id ORDER BY h.created_at ASC";
+// Get PICKUPS from handovers pending validation (tampilkan per pickup, bukan per handover)
+$query = "SELECT p.id as pickup_id,
+          p.outlet_id,
+          p.pickup_date,
+          p.amount_taken,
+          o.outlet_name,
+          h.id as handover_id,
+          h.created_at as handover_created_at,
+          h.notes as handover_notes
+          FROM pickups p
+          JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
+          JOIN outlets o ON p.outlet_id = o.id
+          WHERE p.status = 'handed_over'";
+if ($filter_outlet > 0) $query .= " AND p.outlet_id = $filter_outlet";
+$query .= " ORDER BY h.created_at ASC, p.pickup_date ASC";
 $result = $conn->query($query);
 
 $outlets = $conn->query("SELECT * FROM outlets WHERE is_active = 1");
-$total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t FROM handovers WHERE status = 'pending_validation'")->fetch_assoc();
+$total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken), 0) as t FROM pickups WHERE status = 'handed_over'")->fetch_assoc();
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -550,39 +576,35 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($h = $result->fetch_assoc()):
-                        $periode_date = $h['handover_date'] ? date('d/m/y', strtotime($h['handover_date'])) : '-';
-                        $tgl_setor = $h['created_at'] ? date('d/m/y', strtotime($h['created_at'])) : '-';
-                        $has_notes = !empty($h['notes']);
+                    <?php while ($p = $result->fetch_assoc()):
+                        $periode_date = date('d/m/y', strtotime($p['pickup_date']));
+                        $tgl_setor = date('d/m/y', strtotime($p['handover_created_at']));
+                        $has_notes = !empty($p['handover_notes']);
 
-                        // Parse outlet names and create badges
-                        $outlets_array = array_unique(array_filter(explode(', ', $h['outlets'])));
+                        // Determine outlet class
+                        $outlet_class = (stripos($p['outlet_name'], 'monyonyo') !== false) ? 'outlet-monyonyo' : 'outlet-londripedia';
+                        $note_class = $has_notes ? 'outlet-with-notes' : '';
+                        $onclick = $has_notes ? "showNotes('{$p['pickup_id']}', '" . htmlspecialchars(addslashes($p['handover_notes'])) . "')" : '';
                     ?>
                     <tr>
-                        <td><span class="pickup-id">#<?php echo $h['id']; ?></span></td>
+                        <td><span class="pickup-id">#<?php echo $p['pickup_id']; ?></span></td>
                         <td>
-                            <?php foreach ($outlets_array as $outlet_name):
-                                $outlet_class = (stripos($outlet_name, 'monyonyo') !== false) ? 'outlet-monyonyo' : 'outlet-londripedia';
-                                $note_class = $has_notes ? 'outlet-with-notes' : '';
-                                $onclick = $has_notes ? "showNotes('{$h['id']}', '" . htmlspecialchars(addslashes($h['notes'])) . "')" : '';
-                            ?>
-                                <span class="outlet-badge <?php echo $outlet_class; ?> <?php echo $note_class; ?>"
-                                      onclick="<?php echo $onclick; ?>">
-                                    <?php echo htmlspecialchars($outlet_name); ?>
-                                </span>
-                            <?php endforeach; ?>
+                            <span class="outlet-badge <?php echo $outlet_class; ?> <?php echo $note_class; ?>"
+                                  onclick="<?php echo $onclick; ?>">
+                                <?php echo htmlspecialchars($p['outlet_name']); ?>
+                            </span>
                         </td>
                         <td class="date-text">📅 <?php echo $periode_date; ?></td>
                         <td class="date-text">✋ <?php echo $tgl_setor; ?></td>
-                        <td><span class="amount">💰 <?php echo format_rupiah($h['total_amount']); ?></span></td>
+                        <td><span class="amount">💰 <?php echo format_rupiah($p['amount_taken']); ?></span></td>
                         <td>
                             <div class="action-buttons">
                                 <button class="btn-action btn-validate"
-                                        onclick="showValidateModal(<?php echo $h['id']; ?>, '<?php echo addslashes($h['outlets']); ?>', <?php echo $h['total_amount']; ?>, '<?php echo $periode_date; ?>', '<?php echo $tgl_setor; ?>')">
+                                        onclick="showValidateModal(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>, '<?php echo $periode_date; ?>', '<?php echo $tgl_setor; ?>')">
                                     ✓
                                 </button>
                                 <button class="btn-action btn-reject"
-                                        onclick="confirmReject(<?php echo $h['id']; ?>, '<?php echo addslashes($h['outlets']); ?>', <?php echo $h['total_amount']; ?>)">
+                                        onclick="confirmReject(<?php echo $p['pickup_id']; ?>, '<?php echo addslashes($p['outlet_name']); ?>', <?php echo $p['amount_taken']; ?>)">
                                     ✗
                                 </button>
                             </div>
@@ -607,7 +629,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
     <div id="validateModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                ✅ Validasi Pickup <span id="modalHandoverId"></span>
+                ✅ Validasi Pickup <span id="modalPickupId"></span>
             </div>
             <div class="modal-body">
                 <div class="info-row">
@@ -629,7 +651,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
 
                 <form id="validateForm" method="POST">
                     <input type="hidden" name="action" value="validate">
-                    <input type="hidden" name="handover_id" id="validateHandoverId">
+                    <input type="hidden" name="pickup_id" id="validatePickupId">
 
                     <div class="form-group">
                         <label>💰 Jumlah Diterima</label>
@@ -653,7 +675,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
     <div id="notesModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                💬 Catatan Pickup <span id="notesHandoverId"></span>
+                💬 Catatan Pickup <span id="notesPickupId"></span>
             </div>
             <div class="modal-body">
                 <div class="notes-popup">
@@ -674,10 +696,10 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
                 ❌ Tolak Setoran
             </div>
             <div class="modal-body">
-                <p style="margin-bottom: 16px; color: #64748b;">Yakin tolak setoran ini?</p>
+                <p style="margin-bottom: 16px; color: #64748b;">Yakin tolak pickup ini?</p>
                 <div class="info-row">
                     <span class="info-label">Pickup:</span>
-                    <span class="info-value" id="rejectHandoverId"></span>
+                    <span class="info-value" id="rejectPickupId"></span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Outlet:</span>
@@ -690,7 +712,7 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
 
                 <form id="rejectForm" method="POST">
                     <input type="hidden" name="action" value="reject">
-                    <input type="hidden" name="handover_id" id="rejectFormHandoverId">
+                    <input type="hidden" name="pickup_id" id="rejectFormPickupId">
                 </form>
             </div>
             <div class="modal-footer">
@@ -706,27 +728,27 @@ $total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount), 0) as t
         }
 
         function showValidateModal(id, outlet, amount, periode, tglSetor) {
-            document.getElementById('modalHandoverId').textContent = '#' + id;
+            document.getElementById('modalPickupId').textContent = '#' + id;
             document.getElementById('modalOutlet').textContent = outlet;
             document.getElementById('modalPeriode').textContent = periode;
             document.getElementById('modalTglSetor').textContent = tglSetor;
             document.getElementById('modalTotalDilaporkan').textContent = formatRupiah(amount);
-            document.getElementById('validateHandoverId').value = id;
+            document.getElementById('validatePickupId').value = id;
             document.getElementById('actualAmount').value = amount;
             document.getElementById('validateModal').classList.add('show');
         }
 
         function showNotes(id, notes) {
-            document.getElementById('notesHandoverId').textContent = '#' + id;
+            document.getElementById('notesPickupId').textContent = '#' + id;
             document.getElementById('notesContent').textContent = notes;
             document.getElementById('notesModal').classList.add('show');
         }
 
         function confirmReject(id, outlet, amount) {
-            document.getElementById('rejectHandoverId').textContent = '#' + id;
+            document.getElementById('rejectPickupId').textContent = '#' + id;
             document.getElementById('rejectOutlet').textContent = outlet;
             document.getElementById('rejectAmount').textContent = formatRupiah(amount);
-            document.getElementById('rejectFormHandoverId').value = id;
+            document.getElementById('rejectFormPickupId').value = id;
             document.getElementById('rejectModal').classList.add('show');
         }
 
