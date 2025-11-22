@@ -1,7 +1,8 @@
 <?php
 /**
  * FILE: admin/transfer.php
- * FUNGSI: Transfer per pickup - TAMPILAN RAPI
+ * FUNGSI: Transfer per pickup - MINIMALIS & USER FRIENDLY
+ * VERSION: 2.0 - Simplified UX
  */
 
 require_once '../config.php';
@@ -15,15 +16,17 @@ $user_id = $_SESSION['user_id'];
 // Proses transfer
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pickup_ids'])) {
     $pickup_ids = $_POST['pickup_ids'];
-    $transfer_date = clean_input($_POST['transfer_date']);
-    $account_destination = clean_input($_POST['account_destination']);
-    $transfer_method = clean_input($_POST['transfer_method']);
     $notes = clean_input($_POST['notes'] ?? '');
+
+    // Tanggal transfer otomatis (hari ini)
+    $transfer_date = date('Y-m-d');
+
+    // Account destination dan transfer method tidak wajib (bisa NULL)
+    $account_destination = '';
+    $transfer_method = '';
 
     if (empty($pickup_ids)) {
         $error = "Pilih minimal 1 pickup!";
-    } elseif (empty($transfer_date) || empty($account_destination) || empty($transfer_method)) {
-        $error = "Lengkapi semua field!";
     } else {
         $ids_string = implode(',', array_map('intval', $pickup_ids));
 
@@ -40,9 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pickup_ids'])) {
 
             try {
                 $pickup_ids_json = json_encode(array_map('intval', $pickup_ids));
-                $handover_ids_json = json_encode([]); // FIX: Tambahkan handover_ids sebagai empty array
+                $handover_ids_json = json_encode([]);
 
-                // FIX: Tambahkan kolom handover_ids ke INSERT statement
                 $stmt = $conn->prepare("INSERT INTO transfers (transfer_date, pickup_ids, handover_ids, total_transferred, account_destination, transfer_method, notes, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
                 $stmt->bind_param("sssdsssi", $transfer_date, $pickup_ids_json, $handover_ids_json, $total_transferred, $account_destination, $transfer_method, $notes, $user_id);
 
@@ -244,65 +246,112 @@ $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN user
         .date-text { color: #64748b; font-size: 13px; }
         .amount { font-weight: 600; color: #10b981; font-size: 14px; }
 
-        /* Transfer Form */
+        /* Transfer Form - NEW MINIMALIST DESIGN */
         .transfer-form {
             background: white;
             border-radius: 12px;
-            padding: 20px;
+            padding: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.08);
             margin-bottom: 16px;
             display: none;
         }
         .transfer-form.show { display: block; }
+
         .transfer-form h3 {
-            font-size: 15px;
+            font-size: 16px;
             margin-bottom: 16px;
             color: #111827;
             display: flex;
             align-items: center;
             gap: 8px;
+            font-weight: 600;
         }
 
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 16px;
+        .summary-box {
+            background: #f0fdf4;
+            border-left: 4px solid #10b981;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
         }
+
+        .summary-box h4 {
+            font-size: 13px;
+            color: #065f46;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .summary-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-box li {
+            font-size: 14px;
+            color: #047857;
+            padding: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-box li::before {
+            content: "•";
+            color: #10b981;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
         .form-group label {
             display: block;
-            font-size: 12px;
+            font-size: 13px;
             color: #64748b;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             font-weight: 500;
         }
-        .form-group input,
-        .form-group select {
+
+        .form-group textarea {
             width: 100%;
-            padding: 10px 14px;
+            padding: 12px 14px;
             border: 1px solid #d1d5db;
             border-radius: 8px;
             font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
         }
-        .form-group input:focus,
-        .form-group select:focus {
+
+        .form-group textarea:focus {
             outline: none;
             border-color: #10b981;
             box-shadow: 0 0 0 3px rgba(16,185,129,0.1);
         }
 
         .btn-transfer {
-            padding: 12px 28px;
+            padding: 14px 32px;
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 600;
             transition: all 0.2s;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .btn-transfer:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
+        .btn-transfer:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+        }
 
         /* History */
         .history-section {
@@ -342,7 +391,6 @@ $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN user
         @media (max-width: 768px) {
             .container { padding: 12px; }
             th, td { padding: 10px 12px; font-size: 12px; }
-            .form-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -424,31 +472,25 @@ $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN user
             </div>
 
             <div class="transfer-form" id="transferBox">
-                <h3>📝 Detail Transfer</h3>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>Tanggal Transfer</label>
-                        <input type="date" name="transfer_date" value="<?php echo date('Y-m-d'); ?>" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Rekening Tujuan</label>
-                        <input type="text" name="account_destination" placeholder="Contoh: BCA - 1234567890" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Metode Transfer</label>
-                        <select name="transfer_method" required>
-                            <option value="">-- Pilih --</option>
-                            <option value="mobile_banking">Mobile Banking</option>
-                            <option value="atm">ATM</option>
-                            <option value="cash">Cash/Tunai</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Catatan (opsional)</label>
-                        <input type="text" name="notes" placeholder="Catatan tambahan...">
-                    </div>
+                <h3>✅ Konfirmasi Transfer</h3>
+
+                <div class="summary-box">
+                    <h4>📋 Ringkasan Transfer</h4>
+                    <ul>
+                        <li><span id="summaryCount">0</span> pickup terpilih</li>
+                        <li>Total yang akan ditransfer: <strong id="summaryTotal">Rp 0</strong></li>
+                        <li>Tanggal transfer: <strong><?php echo date('d F Y'); ?></strong></li>
+                    </ul>
                 </div>
-                <button type="submit" class="btn-transfer" onclick="return confirm('Proses transfer?')">💸 Proses Transfer</button>
+
+                <div class="form-group">
+                    <label>💬 Catatan Transfer (opsional)</label>
+                    <textarea name="notes" placeholder=""></textarea>
+                </div>
+
+                <button type="submit" class="btn-transfer" onclick="return confirm('Proses transfer sekarang?')">
+                    💸 Proses Transfer Sekarang
+                </button>
             </div>
         </form>
         <?php else: ?>
@@ -472,8 +514,10 @@ $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN user
                 <div class="history-info">
                     <strong>#<?php echo $h['id']; ?></strong> •
                     <?php echo date('d/m/y', strtotime($h['transfer_date'])); ?> •
-                    <?php echo $pickup_count; ?> pickup •
-                    <?php echo $h['account_destination']; ?>
+                    <?php echo $pickup_count; ?> pickup
+                    <?php if ($h['notes']): ?>
+                        • <?php echo htmlspecialchars(substr($h['notes'], 0, 30)) . (strlen($h['notes']) > 30 ? '...' : ''); ?>
+                    <?php endif; ?>
                 </div>
                 <div class="history-amount"><?php echo format_rupiah($h['total_transferred']); ?></div>
             </div>
@@ -507,8 +551,16 @@ $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN user
                 count++;
                 total += parseFloat(cb.dataset.amount) || 0;
             });
+
+            // Update selection bar
             document.getElementById('selectedCount').textContent = count;
             document.getElementById('selectedTotal').textContent = formatRupiah(total);
+
+            // Update summary box
+            document.getElementById('summaryCount').textContent = count;
+            document.getElementById('summaryTotal').textContent = formatRupiah(total);
+
+            // Show/hide form
             document.getElementById('transferBox').classList.toggle('show', count > 0);
         }
     </script>
