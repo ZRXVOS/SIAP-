@@ -50,7 +50,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                     // Jika semua pickup sudah validated, update handover juga
                     if ($pending_count == 0) {
-                        $conn->query("UPDATE handovers SET status = 'validated', validated_by = $user_id, validated_at = NOW() WHERE id = $handover_id");
+                        // Hitung total actual_amount_received dan difference
+                        $totals = $conn->query("SELECT
+                                                    COALESCE(SUM(actual_amount_received), 0) as total_actual,
+                                                    COALESCE(SUM(amount_taken), 0) as total_reported
+                                                FROM pickups
+                                                WHERE id IN ($ids_string)")->fetch_assoc();
+
+                        $total_actual = $totals['total_actual'];
+                        $total_reported = $totals['total_reported'];
+                        $handover_difference = $total_actual - $total_reported;
+
+                        // Update handover dengan nilai aktual dan selisih
+                        $stmt = $conn->prepare("UPDATE handovers
+                                                SET status = 'validated',
+                                                    actual_amount_received = ?,
+                                                    difference = ?,
+                                                    validated_by = ?,
+                                                    validated_at = NOW()
+                                                WHERE id = ?");
+                        $stmt->bind_param("ddii", $total_actual, $handover_difference, $user_id, $handover_id);
+                        $stmt->execute();
                     }
                 }
 
