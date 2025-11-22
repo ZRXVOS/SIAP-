@@ -25,7 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $query = "SELECT p.*, h.id as handover_id, h.pickup_ids
                   FROM pickups p
                   JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
-                  WHERE p.id = $pickup_id AND p.status = 'handed_over'";
+                  WHERE p.id = $pickup_id AND p.status = 'handed_over'
+                  AND h.status = 'pending_validation'";
         $result = $conn->query($query);
 
         if ($result && $result->num_rows > 0) {
@@ -71,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $query = "SELECT p.*, h.id as handover_id, h.pickup_ids
                       FROM pickups p
                       JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
-                      WHERE p.id = $pickup_id";
+                      WHERE p.id = $pickup_id AND p.status = 'handed_over'
+                      AND h.status = 'pending_validation'";
             $result = $conn->query($query);
 
             if ($result && $result->num_rows > 0) {
@@ -118,18 +120,20 @@ $query = "SELECT p.id as pickup_id,
           FROM pickups p
           JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
           JOIN outlets o ON p.outlet_id = o.id
-          WHERE p.status = 'handed_over'";
+          WHERE p.status = 'handed_over'
+          AND h.status = 'pending_validation'";
 if ($filter_outlet > 0) $query .= " AND p.outlet_id = $filter_outlet";
 $query .= " ORDER BY h.created_at ASC, p.pickup_date ASC";
 $result = $conn->query($query);
 
 $outlets = $conn->query("SELECT * FROM outlets WHERE is_active = 1");
 
-// Fix: Pakai JOIN yang sama untuk konsistensi (hindari orphaned pickups)
+// Fix: Pakai JOIN yang sama untuk konsistensi + filter handover status
 $total_query = "SELECT COUNT(DISTINCT p.id) as c, COALESCE(SUM(p.amount_taken), 0) as t
                 FROM pickups p
                 JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
-                WHERE p.status = 'handed_over'";
+                WHERE p.status = 'handed_over'
+                AND h.status = 'pending_validation'";
 if ($filter_outlet > 0) $total_query .= " AND p.outlet_id = $filter_outlet";
 $total = $conn->query($total_query)->fetch_assoc();
 ?>
