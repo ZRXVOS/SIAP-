@@ -126,18 +126,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pickup_ids'])) {
 // Filter
 $filter_outlet = isset($_GET['outlet']) ? intval($_GET['outlet']) : 0;
 
-// Get pickup validated
+// Get pickup validated (yang belum ditransfer)
 $query = "SELECT p.*, o.outlet_name,
                  COALESCE(p.actual_amount_received, p.amount_taken) as final_amount
           FROM pickups p
           JOIN outlets o ON p.outlet_id = o.id
-          WHERE p.status = 'validated'";
+          WHERE p.status = 'validated'
+          AND (p.transfer_id IS NULL OR p.transfer_id = 0)";
 if ($filter_outlet > 0) $query .= " AND p.outlet_id = $filter_outlet";
 $query .= " ORDER BY p.revenue_date ASC, o.outlet_name ASC";
 $result = $conn->query($query);
 
 $outlets = $conn->query("SELECT * FROM outlets WHERE is_active = 1");
-$total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(COALESCE(actual_amount_received, amount_taken)), 0) as t FROM pickups WHERE status = 'validated'")->fetch_assoc();
+$total = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(COALESCE(actual_amount_received, amount_taken)), 0) as t FROM pickups WHERE status = 'validated' AND (transfer_id IS NULL OR transfer_id = 0)")->fetch_assoc();
 
 // Riwayat
 $history = $conn->query("SELECT t.*, u.full_name FROM transfers t LEFT JOIN users u ON t.recorded_by = u.id ORDER BY t.created_at DESC LIMIT 5");
