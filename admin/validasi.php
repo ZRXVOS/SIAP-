@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
     } elseif ($_POST['action'] === 'reject') {
-        // Tolak pickup - kembalikan ke pending_handover
+        // Tolak pickup - HAPUS PERMANEN dari database
         $conn->begin_transaction();
         try {
             $query = "SELECT p.*, h.id as handover_id, h.pickup_ids
@@ -79,24 +79,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($result && $result->num_rows > 0) {
                 $pickup = $result->fetch_assoc();
                 $handover_id = $pickup['handover_id'];
-
-                // Update pickup kembali ke pending_handover
-                $conn->query("UPDATE pickups SET status = 'pending_handover', updated_at = NOW() WHERE id = $pickup_id");
-
-                // Cek apakah masih ada pickup lain di handover ini
                 $pickup_ids = json_decode($pickup['pickup_ids'], true);
-                if (!empty($pickup_ids)) {
-                    $ids_string = implode(',', array_map('intval', $pickup_ids));
-                    $remaining_count = $conn->query("SELECT COUNT(*) as c FROM pickups WHERE id IN ($ids_string) AND status = 'handed_over'")->fetch_assoc()['c'];
 
-                    // Jika tidak ada lagi pickup yang handed_over, update handover jadi rejected
-                    if ($remaining_count == 0) {
-                        $conn->query("UPDATE handovers SET status = 'rejected', validated_by = $user_id, validated_at = NOW() WHERE id = $handover_id");
+                // HAPUS pickup dari database (hard delete)
+                $conn->query("DELETE FROM pickups WHERE id = $pickup_id");
+
+                // Hapus pickup_id dari array pickup_ids di handover
+                if (!empty($pickup_ids)) {
+                    $pickup_ids = array_filter($pickup_ids, function($id) use ($pickup_id) {
+                        return $id != $pickup_id;
+                    });
+                    $pickup_ids = array_values($pickup_ids); // Re-index array
+                    $new_pickup_ids = json_encode($pickup_ids);
+                    $conn->query("UPDATE handovers SET pickup_ids = '$new_pickup_ids' WHERE id = $handover_id");
+
+                    // Jika tidak ada lagi pickup di handover ini, hapus handover juga
+                    if (empty($pickup_ids)) {
+                        $conn->query("DELETE FROM handovers WHERE id = $handover_id");
+                    } else {
+                        // Cek apakah masih ada pickup yang handed_over
+                        $ids_string = implode(',', array_map('intval', $pickup_ids));
+                        $remaining_count = $conn->query("SELECT COUNT(*) as c FROM pickups WHERE id IN ($ids_string) AND status = 'handed_over'")->fetch_assoc()['c'];
+
+                        // Jika tidak ada lagi pickup yang handed_over, hapus handover
+                        if ($remaining_count == 0) {
+                            $conn->query("DELETE FROM handovers WHERE id = $handover_id");
+                        }
                     }
                 }
 
                 $conn->commit();
-                $success = "❌ Pickup #$pickup_id ditolak dan dikembalikan ke kasir.";
+                $success = "🗑️ Pickup #$pickup_id ditolak dan dihapus permanen dari sistem.";
             }
         } catch (Exception $e) {
             $conn->rollback();
