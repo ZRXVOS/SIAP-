@@ -41,12 +41,7 @@ $query_transfer = "SELECT COALESCE(SUM(total_transferred), 0) as total
 $result_transfer = $conn->query($query_transfer);
 $transfer_bulan_ini = $result_transfer->fetch_assoc()['total'];
 
-// 4. PENDING DELETE REQUESTS
-$query_delete_req = "SELECT COUNT(*) as count FROM delete_requests WHERE status = 'pending'";
-$result_delete_req = $conn->query($query_delete_req);
-$delete_req_count = $result_delete_req->fetch_assoc()['count'];
-
-// 5. SETORAN TERBARU (10 record) - dari handovers
+// 4. SETORAN TERBARU (10 record) - dari handovers
 $query_recent = "SELECT h.id, h.handover_date, h.total_amount, h.actual_amount_received, h.difference, h.status,
                  GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets
                  FROM handovers h
@@ -182,14 +177,6 @@ $notif_count = $result_notif->fetch_assoc()['count'];
             <a href="transfer.php" class="action-btn">
                 <div class="icon">💸</div>
                 <div class="text">Transfer Uang</div>
-            </a>
-
-            <a href="approve-delete.php" class="action-btn">
-                <?php if ($delete_req_count > 0): ?>
-                    <span class="badge"><?php echo $delete_req_count; ?></span>
-                <?php endif; ?>
-                <div class="icon">🗑️</div>
-                <div class="text">Persetujuan Hapus</div>
             </a>
 
             <a href="laporan.php" class="action-btn">
