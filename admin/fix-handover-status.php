@@ -12,6 +12,8 @@ check_role('admin');
 $fixed_count = 0;
 $errors = [];
 
+$details = [];
+
 $conn->begin_transaction();
 
 try {
@@ -19,22 +21,42 @@ try {
     $query_handovers = "SELECT DISTINCT h.id, h.pickup_ids FROM handovers h WHERE h.status = 'validated'";
     $result_handovers = $conn->query($query_handovers);
 
-    if ($result_handovers) {
+    if (!$result_handovers) {
+        throw new Exception("Gagal query handovers: " . $conn->error);
+    }
+
+    if ($result_handovers->num_rows > 0) {
         while ($handover = $result_handovers->fetch_assoc()) {
-            $handover_pickup_ids = json_decode($handover['pickup_ids'], true) ?? [];
+            $handover_pickup_ids = json_decode($handover['pickup_ids'], true);
 
-            if (!empty($handover_pickup_ids)) {
-                $handover_ids_str = implode(',', array_map('intval', $handover_pickup_ids));
+            // Skip if JSON decode failed or empty
+            if (!is_array($handover_pickup_ids) || empty($handover_pickup_ids)) {
+                $details[] = "Handover #{$handover['id']}: Skip (pickup_ids kosong atau invalid)";
+                continue;
+            }
 
-                // Cek apakah ada pickup yang belum transferred di handover ini
-                $check_query = "SELECT COUNT(*) as c FROM pickups WHERE id IN ($handover_ids_str) AND status != 'transferred'";
-                $check = $conn->query($check_query)->fetch_assoc();
+            $handover_ids_str = implode(',', array_map('intval', $handover_pickup_ids));
 
-                // Jika semua pickup sudah transferred, update status handover
-                if ($check['c'] == 0) {
-                    $conn->query("UPDATE handovers SET status = 'transferred', updated_at = NOW() WHERE id = " . $handover['id']);
-                    $fixed_count++;
+            // Cek apakah ada pickup yang belum transferred di handover ini
+            $check_query = "SELECT COUNT(*) as c FROM pickups WHERE id IN ($handover_ids_str) AND status != 'transferred'";
+            $check_result = $conn->query($check_query);
+
+            if (!$check_result) {
+                throw new Exception("Gagal cek status pickup: " . $conn->error);
+            }
+
+            $check = $check_result->fetch_assoc();
+
+            // Jika semua pickup sudah transferred, update status handover
+            if ($check['c'] == 0) {
+                $update_handover = $conn->query("UPDATE handovers SET status = 'transferred', updated_at = NOW() WHERE id = " . $handover['id']);
+                if (!$update_handover) {
+                    throw new Exception("Gagal update handover #{$handover['id']}: " . $conn->error);
                 }
+                $fixed_count++;
+                $details[] = "Handover #{$handover['id']}: ✅ Updated ke 'transferred'";
+            } else {
+                $details[] = "Handover #{$handover['id']}: ⏭️ Skip (masih ada {$check['c']} pickup belum transferred)";
             }
         }
     }
@@ -131,6 +153,15 @@ try {
         <?php if (isset($error)): ?>
             <div class="message error">
                 <?php echo $error; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($details)): ?>
+            <div class="info">
+                <strong>📋 Detail Proses:</strong><br><br>
+                <?php foreach ($details as $detail): ?>
+                    <?php echo $detail; ?><br>
+                <?php endforeach; ?>
             </div>
         <?php endif; ?>
 

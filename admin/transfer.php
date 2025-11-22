@@ -54,28 +54,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pickup_ids'])) {
                 $stmt->close();
 
                 // Update status pickup menjadi transferred
-                $conn->query("UPDATE pickups SET status = 'transferred', transfer_id = $transfer_id, updated_at = NOW() WHERE id IN ($ids_string)");
+                $update_pickup = $conn->query("UPDATE pickups SET status = 'transferred', transfer_id = $transfer_id, updated_at = NOW() WHERE id IN ($ids_string)");
+                if (!$update_pickup) throw new Exception("Gagal update status pickup: " . $conn->error);
 
-                // Update status handover yang berisi pickup ini (jika semua pickup sudah transferred)
-                // Cari handover yang statusnya 'validated'
+                // Update status handover yang berisi pickup ini
+                // Langsung cari handover yang berisi pickup yang baru ditransfer
+                $query_handovers = "SELECT DISTINCT h.id, h.pickup_ids
+                                   FROM handovers h
+                                   WHERE h.status = 'validated'
+                                   AND FIND_IN_SET_ANY(h.pickup_ids, '$ids_string')";
+
+                // Karena MySQL tidak punya FIND_IN_SET_ANY, kita gunakan approach berbeda
+                // Cari semua handover dengan status validated, lalu check satu per satu
                 $query_handovers = "SELECT DISTINCT h.id, h.pickup_ids FROM handovers h WHERE h.status = 'validated'";
                 $result_handovers = $conn->query($query_handovers);
 
                 if ($result_handovers) {
                     while ($handover = $result_handovers->fetch_assoc()) {
-                        $handover_pickup_ids = json_decode($handover['pickup_ids'], true) ?? [];
+                        $handover_pickup_ids = json_decode($handover['pickup_ids'], true);
 
-                        if (!empty($handover_pickup_ids)) {
-                            $handover_ids_str = implode(',', array_map('intval', $handover_pickup_ids));
+                        // Skip if JSON decode failed or empty
+                        if (!is_array($handover_pickup_ids) || empty($handover_pickup_ids)) {
+                            continue;
+                        }
 
-                            // Cek apakah ada pickup yang belum transferred di handover ini
-                            $check_query = "SELECT COUNT(*) as c FROM pickups WHERE id IN ($handover_ids_str) AND status != 'transferred'";
-                            $check = $conn->query($check_query)->fetch_assoc();
-
-                            // Jika semua pickup sudah transferred, update status handover
-                            if ($check['c'] == 0) {
-                                $conn->query("UPDATE handovers SET status = 'transferred', updated_at = NOW() WHERE id = " . $handover['id']);
+                        // Check if any of the transferred pickups belong to this handover
+                        $has_transferred_pickup = false;
+                        foreach ($pickup_ids as $pid) {
+                            if (in_array($pid, $handover_pickup_ids)) {
+                                $has_transferred_pickup = true;
+                                break;
                             }
+                        }
+
+                        // Only check this handover if it contains any of the transferred pickups
+                        // Or check all validated handovers to ensure consistency
+                        // We'll check all to be safe
+                        $handover_ids_str = implode(',', array_map('intval', $handover_pickup_ids));
+
+                        // Cek apakah ada pickup yang belum transferred di handover ini
+                        $check_query = "SELECT COUNT(*) as c FROM pickups WHERE id IN ($handover_ids_str) AND status != 'transferred'";
+                        $check_result = $conn->query($check_query);
+
+                        if (!$check_result) throw new Exception("Gagal cek status pickup di handover: " . $conn->error);
+
+                        $check = $check_result->fetch_assoc();
+
+                        // Jika semua pickup sudah transferred, update status handover
+                        if ($check['c'] == 0) {
+                            $update_handover = $conn->query("UPDATE handovers SET status = 'transferred', updated_at = NOW() WHERE id = " . $handover['id']);
+                            if (!$update_handover) throw new Exception("Gagal update status handover: " . $conn->error);
                         }
                     }
                 }
