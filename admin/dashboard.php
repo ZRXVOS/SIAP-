@@ -24,10 +24,12 @@ $query_saldo = "SELECT COALESCE(SUM(COALESCE(actual_amount_received, amount_take
 $result_saldo = $conn->query($query_saldo);
 $saldo_kas = $result_saldo->fetch_assoc()['total'];
 
-// FIX: 2. PENDING VALIDASI = pickup dengan status 'handed_over' (sudah disetor, belum divalidasi)
-$query_pending = "SELECT COUNT(*) as count, COALESCE(SUM(COALESCE(actual_amount_received, amount_taken)), 0) as total
-                  FROM pickups
-                  WHERE status = 'handed_over'";
+// FIX: 2. PENDING VALIDASI = pickup dengan status 'handed_over' dari handover yang 'pending_validation'
+$query_pending = "SELECT COUNT(DISTINCT p.id) as count, COALESCE(SUM(p.amount_taken), 0) as total
+                  FROM pickups p
+                  JOIN handovers h ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
+                  WHERE p.status = 'handed_over'
+                  AND h.status = 'pending_validation'";
 $result_pending = $conn->query($query_pending);
 $pending_data = $result_pending->fetch_assoc();
 
