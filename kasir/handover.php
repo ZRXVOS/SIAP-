@@ -215,7 +215,7 @@ $total_pending = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken),
                         <thead>
                             <tr>
                                 <th>Outlet</th>
-                                <th>Informasi Pickup</th>
+                                <th>Tanggal Pickup</th>
                                 <th style="text-align: right;">Jumlah</th>
                                 <th style="text-align: center; width: 120px;">Aksi</th>
                             </tr>
@@ -224,7 +224,6 @@ $total_pending = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken),
                             <?php while ($row = $result_pending->fetch_assoc()): ?>
                                 <?php
                                 $outlet_class = (stripos($row['outlet_name'], 'monyonyo') !== false) ? 'badge-monyonyo' : 'badge-londripedia';
-                                $periode = formatTanggalIndonesia($row['periode_start']) . ' - ' . formatTanggalIndonesia($row['periode_end']);
                                 ?>
                                 <tr>
                                     <td>
@@ -233,14 +232,9 @@ $total_pending = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken),
                                         </span>
                                     </td>
                                     <td>
-                                        <div class="info-compact">
-                                            <div>
-                                                <span class="label">📅 Periode:</span>
-                                                <span class="value"><?php echo $periode; ?></span>
-                                            </div>
-                                            <div>
-                                                <span class="label">✋ Tgl Ambil:</span>
-                                                <span class="value"><?php echo date('d/m/Y', strtotime($row['pickup_date'])); ?></span>
+                                        <div>
+                                            <div style="font-size: 14px; color: #333;">
+                                                📅 <?php echo date('d/m/Y H:i', strtotime($row['pickup_date'])); ?>
                                             </div>
                                         </div>
                                     </td>
@@ -251,7 +245,7 @@ $total_pending = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken),
                                     </td>
                                     <td style="text-align: center;">
                                         <button class="btn-action btn-serahkan"
-                                                onclick="showHandoverModal(<?php echo $row['id']; ?>, '<?php echo addslashes($row['outlet_name']); ?>', '<?php echo $periode; ?>', <?php echo $row['amount_taken']; ?>)">
+                                                onclick="showHandoverModal(<?php echo $row['id']; ?>, '<?php echo addslashes($row['outlet_name']); ?>', '<?php echo date('d/m/Y H:i', strtotime($row['pickup_date'])); ?>', <?php echo $row['amount_taken']; ?>)">
                                             ✓ Serahkan
                                         </button>
                                     </td>
@@ -300,11 +294,11 @@ $total_pending = $conn->query("SELECT COUNT(*) as c, COALESCE(SUM(amount_taken),
         const modal = document.getElementById('handoverModal');
         const form = document.getElementById('handoverForm');
 
-        function showHandoverModal(id, outlet, periode, amount) {
+        function showHandoverModal(id, outlet, tanggal, amount) {
             document.getElementById('pickup_id').value = id;
             document.getElementById('pickupInfo').innerHTML = `
                 <div><strong>🏪 Outlet:</strong> ${outlet}</div>
-                <div><strong>📅 Periode:</strong> ${periode}</div>
+                <div><strong>📅 Tanggal:</strong> ${tanggal}</div>
                 <div><strong>💰 Jumlah:</strong> Rp ${amount.toLocaleString('id-ID')}</div>
             `;
             modal.classList.add('show');
