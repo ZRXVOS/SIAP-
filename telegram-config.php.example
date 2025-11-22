@@ -1,0 +1,68 @@
+<?php
+/**
+ * TELEGRAM NOTIFICATION CONFIGURATION
+ *
+ * Copy file ini menjadi telegram-config.php dan isi dengan data Telegram Anda
+ * File telegram-config.php akan di-ignore oleh git untuk keamanan
+ */
+
+// ============================================================
+// LANGKAH SETUP TELEGRAM BOT:
+// ============================================================
+// 1. Buka Telegram, cari @BotFather
+// 2. Kirim perintah: /newbot
+// 3. Beri nama bot Anda (contoh: LondriPedia Notification Bot)
+// 4. Beri username (contoh: londripedia_notif_bot)
+// 5. Copy token yang diberikan BotFather
+// 6. Paste token di bawah ini
+
+define('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE');
+// Contoh: define('TELEGRAM_BOT_TOKEN', '1234567890:ABCdefGHIjklMNOpqrsTUVwxyz');
+
+// ============================================================
+// CARA DAPATKAN CHAT ID:
+// ============================================================
+// 1. Buka Telegram, cari bot Anda (username yang dibuat di BotFather)
+// 2. Klik Start atau kirim pesan ke bot
+// 3. Buka browser, akses URL ini:
+//    https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+//    (ganti <YOUR_BOT_TOKEN> dengan token dari BotFather)
+// 4. Cari "chat":{"id": XXXXXXXXX
+// 5. Copy angka XXXXXXXXX tersebut
+// 6. Paste di bawah ini
+
+define('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID_HERE');
+// Contoh: define('TELEGRAM_CHAT_ID', '123456789');
+
+// ============================================================
+// UNTUK GROUP CHAT:
+// ============================================================
+// 1. Buat group di Telegram
+// 2. Tambahkan bot ke group tersebut
+// 3. Kirim pesan di group
+// 4. Akses URL getUpdates seperti di atas
+// 5. Cari chat id yang negative (contoh: -1001234567890)
+// 6. Paste angka negative tersebut di TELEGRAM_CHAT_ID
+
+// ============================================================
+// ENABLE/DISABLE NOTIFICATION
+// ============================================================
+define('TELEGRAM_ENABLED', true); // false untuk disable notifikasi
+
+// ============================================================
+// TEST NOTIFICATION
+// ============================================================
+// Uncomment code di bawah untuk test notifikasi:
+/*
+require_once 'kasir/handover.php';
+$test = sendTelegramHandoverNotification(
+    'Test Outlet',
+    1,
+    100000,
+    'Test Kasir',
+    'Test catatan'
+);
+echo $test ? "✅ Telegram berhasil!" : "❌ Telegram gagal!";
+*/
+
+?>
