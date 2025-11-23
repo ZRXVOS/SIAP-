@@ -40,7 +40,8 @@ $where_clause = implode(' AND ', $where);
 $query = "SELECT
     p.id,
     o.outlet_name,
-    p.pickup_date as periode,
+    p.revenue_date as periode,
+    p.pickup_date as periode_fallback,
     p.created_at as tgl_input,
     p.pickup_date as tgl_ambil,
     h.validated_at as tgl_validasi,
@@ -98,10 +99,15 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
         ];
         $status_label = $status_map[$row['status']] ?? $row['status'];
 
+        // Fix: Gunakan revenue_date untuk periode, fallback ke pickup_date jika kosong
+        $periode_display = ($row['periode'] && $row['periode'] != '0000-00-00')
+            ? $row['periode']
+            : $row['periode_fallback'];
+
         echo "<tr>";
         echo "<td>#" . $row['id'] . "</td>";
         echo "<td>" . htmlspecialchars($row['outlet_name']) . "</td>";
-        echo "<td>" . date('d/m/Y', strtotime($row['periode'])) . "</td>";
+        echo "<td>" . date('d/m/Y', strtotime($periode_display)) . "</td>";
         echo "<td>" . ($row['tgl_input'] ? date('d/m/Y', strtotime($row['tgl_input'])) : '-') . "</td>";
         echo "<td>" . ($row['tgl_ambil'] ? date('d/m/Y', strtotime($row['tgl_ambil'])) : '-') . "</td>";
         echo "<td>" . ($row['tgl_validasi'] ? date('d/m/Y', strtotime($row['tgl_validasi'])) : '-') . "</td>";
@@ -477,6 +483,11 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
                             $selisih_class = 'zero';
                             if ($row['selisih'] > 0) $selisih_class = 'positive';
                             if ($row['selisih'] < 0) $selisih_class = 'negative';
+
+                            // Fix: Gunakan revenue_date untuk periode, fallback ke pickup_date jika kosong
+                            $periode_display = ($row['periode'] && $row['periode'] != '0000-00-00')
+                                ? $row['periode']
+                                : $row['periode_fallback'];
                             ?>
                             <tr>
                                 <td><strong>#<?php echo $row['id']; ?></strong></td>
@@ -485,7 +496,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
                                         <?php echo htmlspecialchars($row['outlet_name']); ?>
                                     </span>
                                 </td>
-                                <td><?php echo date('d/m/y', strtotime($row['periode'])); ?></td>
+                                <td><?php echo date('d/m/y', strtotime($periode_display)); ?></td>
                                 <td><?php echo $row['tgl_input'] ? date('d/m/y', strtotime($row['tgl_input'])) : '-'; ?></td>
                                 <td><?php echo $row['tgl_ambil'] ? date('d/m/y', strtotime($row['tgl_ambil'])) : '-'; ?></td>
                                 <td><?php echo $row['tgl_validasi'] ? date('d/m/y', strtotime($row['tgl_validasi'])) : '-'; ?></td>
