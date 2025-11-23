@@ -145,6 +145,7 @@ $filter_outlet = isset($_GET['outlet']) ? intval($_GET['outlet']) : 0;
 $query = "SELECT p.id as pickup_id,
           p.outlet_id,
           p.pickup_date,
+          p.revenue_date,
           p.amount_taken,
           o.outlet_name,
           h.id as handover_id,
@@ -581,7 +582,10 @@ $total = $conn->query($total_query)->fetch_assoc();
                 </thead>
                 <tbody>
                     <?php while ($p = $result->fetch_assoc()):
-                        $periode_date = date('d/m/y', strtotime($p['pickup_date']));
+                        // Fix: Gunakan revenue_date untuk periode omzet, fallback ke pickup_date jika kosong
+                        $periode_date = ($p['revenue_date'] && $p['revenue_date'] != '0000-00-00')
+                            ? date('d/m/y', strtotime($p['revenue_date']))
+                            : date('d/m/y', strtotime($p['pickup_date']));
                         $tgl_setor = date('d/m/y', strtotime($p['handover_created_at']));
 
                         // Determine outlet class
