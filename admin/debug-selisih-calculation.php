@@ -67,8 +67,8 @@ while ($row = $result->fetch_assoc()) {
     echo "<td>{$row['pickup_date']}</td>";
     echo "<td>{$row['outlet_name']}</td>";
     echo "<td>Rp " . number_format($row['dilaporkan'], 0, ',', '.') . "</td>";
-    echo "<td>Rp " . number_format($row['aktual'], 0, ',', '.') . "</td>";
-    echo "<td>Rp " . number_format($row['selisih_raw'], 0, ',', '.') . "</td>";
+    echo "<td>Rp " . number_format($row['aktual'] ?? 0, 0, ',', '.') . "</td>";
+    echo "<td>Rp " . number_format($row['selisih_raw'] ?? 0, 0, ',', '.') . "</td>";
     echo "<td>Rp " . number_format($row['selisih_coalesce'], 0, ',', '.') . "</td>";
     echo "<td>{$row['status']}</td>";
     echo "</tr>";
@@ -122,10 +122,10 @@ while ($row = $result2->fetch_assoc()) {
     echo "<td>{$row['pickup_date']}</td>";
     echo "<td>{$row['outlet_name']}</td>";
     echo "<td>Rp " . number_format($row['dilaporkan'], 0, ',', '.') . "</td>";
-    echo "<td>Rp " . number_format($row['aktual'], 0, ',', '.') . "</td>";
-    echo "<td>Rp " . number_format($row['selisih'], 0, ',', '.') . "</td>";
+    echo "<td>Rp " . number_format($row['aktual'] ?? 0, 0, ',', '.') . "</td>";
+    echo "<td>Rp " . number_format($row['selisih'] ?? 0, 0, ',', '.') . "</td>";
     echo "<td>{$row['status']}</td>";
-    echo "<td>" . substr($row['notes'], 0, 50) . "</td>";
+    echo "<td>" . (isset($row['notes']) ? substr($row['notes'], 0, 50) : '-') . "</td>";
     echo "</tr>";
 }
 echo "</table>";
@@ -209,6 +209,29 @@ echo "</td>";
 echo "</tr>";
 echo "</table>";
 
+// Add explanation
+echo "<div style='background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 15px; margin: 20px 0;'>";
+echo "<h3 style='margin-top: 0; color: #856404;'>⚠️ PENJELASAN PERBEDAAN</h3>";
+echo "<p><strong>OLD Calculation (BENAR untuk laporan.php):</strong></p>";
+echo "<ul>";
+echo "<li>Hanya menghitung pickup yang SUDAH disetor/divalidasi (actual_amount_received IS NOT NULL)</li>";
+echo "<li>Total Selisih = Selisih AKTUAL antara yang dilaporkan vs yang diterima</li>";
+echo "<li>Pickup yang belum disetor TIDAK dihitung karena belum ada nilai aktualnya</li>";
+echo "<li style='color: green; font-weight: bold;'>✓ Ini adalah calculation yang BENAR untuk Total Selisih</li>";
+echo "</ul>";
+echo "<p><strong>NEW Calculation (SALAH jika digunakan):</strong></p>";
+echo "<ul>";
+echo "<li>Menghitung SEMUA pickup, termasuk yang belum disetor</li>";
+echo "<li>Pickup yang belum disetor dianggap actual = 0, sehingga selisih = 0 - dilaporkan (negatif besar)</li>";
+echo "<li>Perbedaan Rp " . number_format(abs($summary_old['total_selisih_old'] - $summary_new['total_selisih_new']), 0, ',', '.') . " = Total amount_taken dari pickup yang belum disetor</li>";
+echo "<li style='color: red; font-weight: bold;'>✗ Ini TIDAK masuk akal karena kita belum terima uangnya</li>";
+echo "</ul>";
+echo "<p style='background: #d4edda; border-left: 4px solid #28a745; padding: 10px; margin-top: 15px;'>";
+echo "<strong style='color: #155724;'>KESIMPULAN:</strong> laporan.php SUDAH BENAR menggunakan OLD calculation. ";
+echo "Total Selisih Rp " . number_format($summary_old['total_selisih_old'], 0, ',', '.') . " adalah nilai yang tepat.";
+echo "</p>";
+echo "</div>";
+
 // Check for the expected Rp300,000
 echo "<h2>4. Cari 2 Transaksi dengan Selisih Rp250,000 dan Rp50,000</h2>";
 $query_search = "SELECT
@@ -249,8 +272,8 @@ if ($result_search->num_rows > 0) {
         echo "<td>{$row['pickup_date']}</td>";
         echo "<td>{$row['outlet_name']}</td>";
         echo "<td>Rp " . number_format($row['dilaporkan'], 0, ',', '.') . "</td>";
-        echo "<td>Rp " . number_format($row['aktual'], 0, ',', '.') . "</td>";
-        echo "<td><strong>Rp " . number_format($row['selisih'], 0, ',', '.') . "</strong></td>";
+        echo "<td>Rp " . number_format($row['aktual'] ?? 0, 0, ',', '.') . "</td>";
+        echo "<td><strong>Rp " . number_format($row['selisih'] ?? 0, 0, ',', '.') . "</strong></td>";
         echo "<td>{$row['status']}</td>";
         echo "</tr>";
     }
@@ -300,7 +323,7 @@ while ($row = $result_last10->fetch_assoc()) {
     echo "<td>{$row['pickup_date']}</td>";
     echo "<td>{$row['outlet_name']}</td>";
     echo "<td>Rp " . number_format($row['dilaporkan'], 0, ',', '.') . "</td>";
-    echo "<td>Rp " . number_format($row['aktual'], 0, ',', '.') . "</td>";
+    echo "<td>Rp " . number_format($row['aktual'] ?? 0, 0, ',', '.') . "</td>";
     echo "<td>Rp " . number_format($row['selisih'], 0, ',', '.') . "</td>";
     echo "<td>{$row['status']}</td>";
     echo "</tr>";
