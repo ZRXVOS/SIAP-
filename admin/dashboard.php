@@ -46,17 +46,25 @@ $query_transfer = "SELECT COALESCE(SUM(total_transferred), 0) as total
 $result_transfer = $conn->query($query_transfer);
 $transfer_bulan_ini = $result_transfer->fetch_assoc()['total'];
 
-// 4. SETORAN TERBARU (10 record) - dari handovers
+// 4. SETORAN TERBARU (20 record) - dari handovers DIPISAH PER OUTLET/PICKUP
 // Filter: exclude handovers dengan total_amount = 0 (anomali/data tidak valid)
-$query_recent = "SELECT h.id, h.handover_date, h.total_amount, h.actual_amount_received, h.difference, h.status,
-                 GROUP_CONCAT(DISTINCT o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') as outlets
+// Setiap pickup ditampilkan sebagai baris terpisah dengan outlet dan nilai masing-masing
+$query_recent = "SELECT
+                    h.id as handover_id,
+                    h.handover_date,
+                    h.status,
+                    p.id as pickup_id,
+                    p.amount_taken as pickup_amount,
+                    p.actual_amount_received as pickup_actual,
+                    (COALESCE(p.actual_amount_received, 0) - p.amount_taken) as pickup_difference,
+                    o.outlet_name,
+                    o.id as outlet_id
                  FROM handovers h
                  LEFT JOIN pickups p ON FIND_IN_SET(p.id, REPLACE(REPLACE(REPLACE(h.pickup_ids, '[', ''), ']', ''), '\"', ''))
                  LEFT JOIN outlets o ON p.outlet_id = o.id
-                 WHERE h.total_amount > 0
-                 GROUP BY h.id
-                 ORDER BY h.created_at DESC
-                 LIMIT 10";
+                 WHERE h.total_amount > 0 AND p.id IS NOT NULL
+                 ORDER BY h.created_at DESC, o.outlet_name ASC
+                 LIMIT 20";
 $result_recent = $conn->query($query_recent);
 
 // 6. NOTIFIKASI BELUM DIBACA
@@ -215,23 +223,20 @@ $notif_count = $result_notif->fetch_assoc()['count'];
                                     <td><?php echo date('d/m/Y H:i', strtotime($row['handover_date'])); ?></td>
                                     <td>
                                         <?php
-                                        if ($row['outlets']) {
-                                            $outlets = array_unique(explode(', ', $row['outlets']));
-                                            foreach ($outlets as $outlet) {
-                                                $badge_class = (stripos($outlet, 'monyonyo') !== false) ? 'badge-monyonyo' : 'badge-londripedia';
-                                                echo "<span class='outlet-badge $badge_class'>$outlet</span>";
-                                            }
+                                        if ($row['outlet_name']) {
+                                            $badge_class = (stripos($row['outlet_name'], 'monyonyo') !== false) ? 'badge-monyonyo' : 'badge-londripedia';
+                                            echo "<span class='outlet-badge $badge_class'>{$row['outlet_name']}</span>";
                                         } else {
                                             echo '-';
                                         }
                                         ?>
                                     </td>
-                                    <td><strong><?php echo format_rupiah($row['total_amount']); ?></strong></td>
-                                    <td><?php echo $row['actual_amount_received'] ? format_rupiah($row['actual_amount_received']) : '-'; ?></td>
+                                    <td><strong><?php echo format_rupiah($row['pickup_amount']); ?></strong></td>
+                                    <td><?php echo $row['pickup_actual'] ? format_rupiah($row['pickup_actual']) : '-'; ?></td>
                                     <td>
-                                        <?php if ($row['difference']): ?>
-                                            <span style="color: <?php echo $row['difference'] < 0 ? '#ef4444' : '#10b981'; ?>">
-                                                <?php echo format_rupiah($row['difference']); ?>
+                                        <?php if ($row['pickup_difference']): ?>
+                                            <span style="color: <?php echo $row['pickup_difference'] < 0 ? '#ef4444' : '#10b981'; ?>">
+                                                <?php echo format_rupiah($row['pickup_difference']); ?>
                                             </span>
                                         <?php else: ?>
                                             -
