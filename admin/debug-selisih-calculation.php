@@ -282,21 +282,21 @@ if ($result_search->num_rows > 0) {
     echo "<p class='error'>Tidak ditemukan transaksi dengan selisih Rp250,000 atau Rp50,000</p>";
 }
 
-// Show last 10 transactions with status != transferred
-echo "<h2>5. 10 Transaksi Terakhir yang BELUM ditransfer (status != 'transferred')</h2>";
+// Show pickups with actual != NULL (yang sudah disetor/divalidasi)
+echo "<h2>5. Verifikasi: Total Selisih dari Semua Pickup dengan Actual != NULL</h2>";
 $query_last10 = "SELECT
     p.id,
     p.pickup_date,
     o.outlet_name,
     p.amount_taken as dilaporkan,
     p.actual_amount_received as aktual,
-    (COALESCE(p.actual_amount_received, 0) - p.amount_taken) as selisih,
+    (p.actual_amount_received - p.amount_taken) as selisih,
     p.status
 FROM pickups p
 LEFT JOIN outlets o ON p.outlet_id = o.id
-WHERE p.status != 'transferred'
-ORDER BY p.id DESC
-LIMIT 10";
+WHERE p.actual_amount_received IS NOT NULL
+  AND DATE(p.pickup_date) >= '2025-11-01' AND DATE(p.pickup_date) <= '2025-11-23'
+ORDER BY p.id DESC";
 
 $result_last10 = $conn->query($query_last10);
 
@@ -330,13 +330,17 @@ while ($row = $result_last10->fetch_assoc()) {
 }
 echo "</table>";
 
-echo "<p><strong>Total Selisih 10 transaksi terakhir (belum transfer): Rp " . number_format($total_selisih_last10, 0, ',', '.') . "</strong></p>";
+echo "<p><strong>Total Selisih dari semua pickup dengan actual != NULL: Rp " . number_format($total_selisih_last10, 0, ',', '.') . "</strong></p>";
 
-if ($total_selisih_last10 == 300000) {
-    echo "<p class='success'>✓ Total selisih = Rp300,000 (SESUAI EKSPEKTASI!)</p>";
+if ($total_selisih_last10 == -300000) {
+    echo "<p class='success'>✓ Total selisih = Rp " . number_format($total_selisih_last10, 0, ',', '.') . " (SESUAI dengan laporan.php!)</p>";
 } else {
-    echo "<p class='error'>✗ Total selisih = Rp" . number_format($total_selisih_last10, 0, ',', '.') . " (Ekspektasi: Rp300,000)</p>";
+    echo "<p class='error'>✗ Total selisih = Rp " . number_format($total_selisih_last10, 0, ',', '.') . " (Expected: Rp -300.000)</p>";
 }
+
+echo "<p style='background: #e0f2fe; border-left: 4px solid #0284c7; padding: 10px; margin-top: 10px;'>";
+echo "<strong>ℹ️ Catatan:</strong> Ini harus sama dengan 'Total Selisih' di section 3 (OLD Calculation) dan di laporan.php";
+echo "</p>";
 
 echo "<hr>";
 echo "<p><a href='laporan.php'>← Kembali ke Laporan Pickup</a></p>";
