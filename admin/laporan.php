@@ -288,12 +288,14 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            white-space: nowrap;
         }
         td {
             padding: 14px 12px;
             border-bottom: 1px solid #f0f0f0;
             font-size: 13px;
             color: #333;
+            white-space: nowrap;
         }
         tbody tr:hover {
             background: #f9fafb;
@@ -327,7 +329,10 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
         .badge.validated { background: #d1fae5; color: #059669; }
         .badge.transferred { background: #dbeafe; color: #2563eb; }
 
-        .amount { font-weight: 600; }
+        .amount {
+            font-weight: 600;
+            white-space: nowrap;
+        }
         .amount.positive { color: #10b981; }
         .amount.negative { color: #ef4444; }
         .amount.zero { color: #6b7280; }
