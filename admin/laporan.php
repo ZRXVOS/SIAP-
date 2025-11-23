@@ -2,7 +2,8 @@
 /**
  * FILE: admin/laporan.php
  * FUNGSI: Laporan Pickup dengan filter dan export Excel
- * VERSION: 1.0 - FIX: Total Selisih dan kolom SELISIH calculation
+ * VERSION: 1.1 - HIDE transaksi sebelum 19 Nov 2025 untuk akurasi data
+ * NOTE: Minimum tanggal adalah 19 November 2025 untuk menghindari data lama yang bermasalah
  */
 
 require_once '../config.php';
@@ -10,10 +11,17 @@ check_login();
 check_role('admin');
 
 // Filter parameters
-$filter_dari = isset($_GET['dari']) ? clean_input($_GET['dari']) : date('Y-m-01');
+// MINIMUM tanggal adalah 19 November 2025 untuk menghindari data lama yang bermasalah
+$min_date = '2025-11-19';
+$filter_dari = isset($_GET['dari']) ? clean_input($_GET['dari']) : $min_date;
 $filter_sampai = isset($_GET['sampai']) ? clean_input($_GET['sampai']) : date('Y-m-d');
 $filter_outlet = isset($_GET['outlet']) ? clean_input($_GET['outlet']) : '';
 $filter_status = isset($_GET['status']) ? clean_input($_GET['status']) : '';
+
+// Enforce minimum date - jangan tampilkan transaksi sebelum 19 Nov 2025
+if ($filter_dari < $min_date) {
+    $filter_dari = $min_date;
+}
 
 // Build WHERE clause
 $where = ["DATE(p.pickup_date) >= '$filter_dari'", "DATE(p.pickup_date) <= '$filter_sampai'"];
@@ -356,10 +364,15 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
         <!-- Filter -->
         <div class="filter-box">
             <form method="GET" action="">
+                <?php if ($filter_dari == $min_date && (!isset($_GET['dari']) || $_GET['dari'] < $min_date)): ?>
+                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin-bottom: 15px; border-radius: 8px; font-size: 13px;">
+                    <strong>ℹ️ Info:</strong> Laporan ini hanya menampilkan transaksi dari <strong>19 November 2025</strong> ke atas untuk akurasi data.
+                </div>
+                <?php endif; ?>
                 <div class="filter-grid">
                     <div class="filter-group">
-                        <label>Dari Tanggal</label>
-                        <input type="date" name="dari" value="<?php echo htmlspecialchars($filter_dari); ?>">
+                        <label>Dari Tanggal (Min: 19 Nov 2025)</label>
+                        <input type="date" name="dari" value="<?php echo htmlspecialchars($filter_dari); ?>" min="<?php echo $min_date; ?>">
                     </div>
 
                     <div class="filter-group">
