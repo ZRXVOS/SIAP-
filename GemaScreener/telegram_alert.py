@@ -39,13 +39,14 @@ def send_telegram_message(message: str, parse_mode: str = "HTML") -> bool:
         return False
 
 
-def format_screening_alert(results: List[Dict[str, Any]], rule_num: int) -> str:
+def format_screening_alert(results: List[Dict[str, Any]], rule_num: int, max_display: int = 10) -> str:
     """
     Format hasil screening menjadi pesan Telegram
 
     Args:
         results: List hasil screening yang passed
         rule_num: Nomor rumus (1, 2, atau 3)
+        max_display: Maksimal saham yang ditampilkan (default 10)
 
     Returns:
         String pesan yang diformat
@@ -58,6 +59,9 @@ def format_screening_alert(results: List[Dict[str, Any]], rule_num: int) -> str:
     if not passed:
         return ""
 
+    # Sort by value (highest first) untuk menampilkan yang paling liquid
+    passed_sorted = sorted(passed, key=lambda x: x.get('details', {}).get('value', 0), reverse=True)
+
     # Header
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     rule_name = RUMUS_NAMES.get(rule_num, f"Rule {rule_num}")
@@ -67,8 +71,11 @@ def format_screening_alert(results: List[Dict[str, Any]], rule_num: int) -> str:
     message += f"<code>{timestamp}</code>\n"
     message += f"━━━━━━━━━━━━━━━━━━━━\n\n"
 
+    # Limit results untuk Telegram (max 10)
+    display_results = passed_sorted[:max_display]
+
     # Results
-    for i, r in enumerate(passed, 1):
+    for i, r in enumerate(display_results, 1):
         ticker = r['ticker'].replace('.JK', '')
         details = r.get('details', {})
 
@@ -92,22 +99,21 @@ def format_screening_alert(results: List[Dict[str, Any]], rule_num: int) -> str:
         if value:
             message += f"   📊 Value: {value/1e9:.2f}B\n"
 
-        # RSI
+        # RSI (simplified)
         rsi = details.get('rsi', 0)
-        if rsi:
+        if rsi and not (rsi != rsi):  # Check for NaN
             rsi_emoji = "🔴" if rsi > 70 else ("🟢" if rsi < 30 else "⚪")
             message += f"   {rsi_emoji} RSI: {rsi:.1f}\n"
 
-        # Key signals (max 2)
-        signals = r.get('signals', [])[:2]
-        if signals:
-            message += f"   ✅ {', '.join(signals)}\n"
-
         message += "\n"
 
-    # Footer
+    # Footer dengan info jika ada lebih banyak
     message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"<i>Total: {len(passed)} saham terdeteksi</i>\n"
+    if len(passed) > max_display:
+        others = len(passed) - max_display
+        other_tickers = [r['ticker'].replace('.JK', '') for r in passed_sorted[max_display:max_display+10]]
+        message += f"<i>+{others} lainnya: {', '.join(other_tickers[:10])}</i>\n"
+    message += f"<b>Total: {len(passed)} saham terdeteksi</b>\n"
     message += f"<i>⚠️ Bukan rekomendasi investasi</i>"
 
     return message
