@@ -496,23 +496,164 @@ class BacktestEngine:
         shares = int(position_value / price / 100) * 100
         return max(shares, 100)
 
-    def _check_exit_conditions(self, trade: Trade, current_high: float,
-                                current_low: float, current_close: float,
-                                days_held: int) -> Tuple[bool, str, float]:
-        """Check if exit conditions are met"""
+    def _check_exit_for_rule(self, df: pd.DataFrame, idx: int, trade: Trade,
+                              days_held: int) -> Tuple[bool, str, float]:
+        """
+        Check exit conditions based on specific rule from journal
+        Each rule has its own exit logic as per original research
+        """
+        rule = trade.rule
         entry_price = trade.entry_price
 
-        tp_price = entry_price * (1 + self.config.take_profit_pct)
-        sl_price = entry_price * (1 - self.config.stop_loss_pct)
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
 
-        if current_high >= tp_price:
-            return True, "TAKE_PROFIT", tp_price
+        curr_close = close.iloc[idx]
+        curr_high = high.iloc[idx]
+        curr_low = low.iloc[idx]
 
-        if current_low <= sl_price:
-            return True, "STOP_LOSS", sl_price
+        # ============================================================
+        # RULE 1-3: Original rules (use default TP/SL)
+        # ============================================================
+        if rule in [1, 2, 3]:
+            tp_price = entry_price * (1 + self.config.take_profit_pct)
+            sl_price = entry_price * (1 - self.config.stop_loss_pct)
 
-        if days_held >= self.config.max_holding_days:
-            return True, "TIME_EXIT", current_close
+            if curr_high >= tp_price:
+                return True, "TAKE_PROFIT", tp_price
+            if curr_low <= sl_price:
+                return True, "STOP_LOSS", sl_price
+            if days_held >= self.config.max_holding_days:
+                return True, "TIME_EXIT", curr_close
+
+        # ============================================================
+        # RULE 4: RSI-2 Mean Reversion (Larry Connors)
+        # EXIT: Close > SMA(5) - NO STOP LOSS!
+        # Max hold: 5 days
+        # ============================================================
+        elif rule == 4:
+            # Calculate SMA(5)
+            sma_5 = close.rolling(window=5, min_periods=5).mean()
+            curr_sma_5 = sma_5.iloc[idx] if idx >= 5 else None
+
+            # Exit when close > SMA(5) - mean reversion complete
+            if curr_sma_5 is not None and curr_close > curr_sma_5:
+                return True, "MEAN_REVERSION", curr_close
+
+            # Time exit only (NO STOP LOSS per Connors research)
+            if days_held >= 5:
+                return True, "TIME_EXIT", curr_close
+
+        # ============================================================
+        # RULE 5: Dual MA Crossover
+        # EXIT: Death Cross (SMA20 < SMA50) OR Close < SMA50
+        # ============================================================
+        elif rule == 5:
+            sma_20 = close.rolling(window=20, min_periods=20).mean()
+            sma_50 = close.rolling(window=50, min_periods=50).mean()
+
+            curr_sma_20 = sma_20.iloc[idx] if idx >= 20 else None
+            curr_sma_50 = sma_50.iloc[idx] if idx >= 50 else None
+            prev_sma_20 = sma_20.iloc[idx-1] if idx >= 21 else None
+            prev_sma_50 = sma_50.iloc[idx-1] if idx >= 51 else None
+
+            # Death Cross
+            if all(v is not None for v in [curr_sma_20, curr_sma_50, prev_sma_20, prev_sma_50]):
+                if prev_sma_20 >= prev_sma_50 and curr_sma_20 < curr_sma_50:
+                    return True, "DEATH_CROSS", curr_close
+
+            # Close below SMA50
+            if curr_sma_50 is not None and curr_close < curr_sma_50:
+                return True, "BREAKDOWN", curr_close
+
+            # Max hold 30 days
+            if days_held >= 30:
+                return True, "TIME_EXIT", curr_close
+
+        # ============================================================
+        # RULE 6: Bollinger Band Mean Reversion
+        # EXIT: Close > BB_Middle (return to mean) - NO STOP LOSS!
+        # ============================================================
+        elif rule == 6:
+            # Calculate Bollinger Bands
+            sma_20 = close.rolling(window=20, min_periods=20).mean()
+            curr_bb_middle = sma_20.iloc[idx] if idx >= 20 else None
+
+            # Exit when close > BB Middle (mean reversion complete)
+            if curr_bb_middle is not None and curr_close > curr_bb_middle:
+                return True, "MEAN_REVERSION", curr_close
+
+            # Time exit only (NO STOP LOSS for mean reversion)
+            if days_held >= 10:
+                return True, "TIME_EXIT", curr_close
+
+        # ============================================================
+        # RULE 7: Breakout with Volume
+        # EXIT: TP +10%, SL -5%, or Close < SMA(10)
+        # ============================================================
+        elif rule == 7:
+            tp_price = entry_price * 1.10  # +10%
+            sl_price = entry_price * 0.95  # -5%
+
+            # Take Profit
+            if curr_high >= tp_price:
+                return True, "TAKE_PROFIT", tp_price
+
+            # Stop Loss
+            if curr_low <= sl_price:
+                return True, "STOP_LOSS", sl_price
+
+            # Momentum loss: Close < SMA(10)
+            sma_10 = close.rolling(window=10, min_periods=10).mean()
+            curr_sma_10 = sma_10.iloc[idx] if idx >= 10 else None
+
+            if curr_sma_10 is not None and curr_close < curr_sma_10:
+                return True, "MOMENTUM_LOSS", curr_close
+
+            # Max hold 15 days
+            if days_held >= 15:
+                return True, "TIME_EXIT", curr_close
+
+        # ============================================================
+        # RULE 8: Three MA System
+        # EXIT: SMA(10) < SMA(20) OR Close < SMA(50) OR Trailing Stop
+        # ============================================================
+        elif rule == 8:
+            sma_10 = close.rolling(window=10, min_periods=10).mean()
+            sma_20 = close.rolling(window=20, min_periods=20).mean()
+            sma_50 = close.rolling(window=50, min_periods=50).mean()
+
+            curr_sma_10 = sma_10.iloc[idx] if idx >= 10 else None
+            curr_sma_20 = sma_20.iloc[idx] if idx >= 20 else None
+            curr_sma_50 = sma_50.iloc[idx] if idx >= 50 else None
+
+            # MA Cross Down: SMA10 < SMA20
+            if curr_sma_10 is not None and curr_sma_20 is not None:
+                if curr_sma_10 < curr_sma_20:
+                    return True, "MA_CROSS_DOWN", curr_close
+
+            # Breakdown: Close < SMA50
+            if curr_sma_50 is not None and curr_close < curr_sma_50:
+                return True, "BREAKDOWN", curr_close
+
+            # Trailing Stop: 2x ATR
+            # Calculate ATR
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_14 = tr.rolling(window=14, min_periods=14).mean()
+            curr_atr = atr_14.iloc[idx] if idx >= 14 else None
+
+            if curr_atr is not None:
+                trailing_stop = entry_price - (2 * curr_atr)
+                if curr_close < trailing_stop:
+                    return True, "TRAILING_STOP", curr_close
+
+            # Max hold 20 days
+            if days_held >= 20:
+                return True, "TIME_EXIT", curr_close
 
         return False, None, None
 
@@ -536,16 +677,14 @@ class BacktestEngine:
         equity = capital
 
         print(f"\n{'='*60}")
-        print(f"🔄 RUNNING BACKTEST")
+        print(f"🔄 RUNNING BACKTEST (Rule-Specific Exit)")
         print(f"{'='*60}")
         print(f"Initial Capital: Rp {capital:,.0f}")
         print(f"Position Size: {self.config.position_size_pct*100:.0f}%")
-        print(f"Take Profit: +{self.config.take_profit_pct*100:.0f}%")
-        print(f"Stop Loss: -{self.config.stop_loss_pct*100:.0f}%")
-        print(f"Max Hold: {self.config.max_holding_days} days")
         print(f"Rules: {self.config.rules}")
         print(f"Mode: {self.config.mode}")
         print(f"Tickers: {len(tickers)}")
+        print(f"Exit Strategy: Per-Rule (from Journal)")
         print(f"{'='*60}\n")
 
         # Load and process all data
@@ -613,12 +752,14 @@ class BacktestEngine:
                     mask = df['Date'].dt.strftime('%Y-%m-%d') == current_date
 
                     if mask.any():
-                        row = df[mask].iloc[0]
+                        idx = df.index[mask][0]
+                        df_idx = df.index.get_loc(idx)
                         days_held = (datetime.strptime(current_date, '%Y-%m-%d') -
                                     datetime.strptime(trade.entry_date, '%Y-%m-%d')).days
 
-                        should_exit, reason, exit_price = self._check_exit_conditions(
-                            trade, row['High'], row['Low'], row['Close'], days_held
+                        # Use rule-specific exit conditions
+                        should_exit, reason, exit_price = self._check_exit_for_rule(
+                            df, df_idx, trade, days_held
                         )
 
                         if should_exit:
