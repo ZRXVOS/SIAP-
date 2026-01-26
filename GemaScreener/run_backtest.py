@@ -81,10 +81,20 @@ def main():
 Examples:
     python run_backtest.py --rule 1 --period 1y
     python run_backtest.py --all --period 3y
-    python run_backtest.py --rule 2 --period 6m --export-excel
-    python run_backtest.py --all --period 1y --telegram
+    python run_backtest.py --rule 4 --period 1y --export-excel
+    python run_backtest.py --rules 4,5,6 --period 1y
     python run_backtest.py --rule 1 --start 2023-01-01 --end 2024-12-31
     python run_backtest.py --all --period 1y --mode strict
+
+Available Rules:
+    Rule 1: Konsisten Naik (9 hari HIGH > 2% dari prev CLOSE)
+    Rule 2: Breakout Kuat (8%+ gain + volume spike)
+    Rule 3: Reversal/Hammer (shadow bawah + bullish)
+    Rule 4: RSI-2 Mean Reversion (RSI(2) < 5, uptrend)
+    Rule 5: Dual MA Crossover (SMA20 x SMA50 golden cross)
+    Rule 6: Bollinger Mean Reversion (Close < BB_Lower + oversold)
+    Rule 7: Breakout Volume (High20 breakout + vol 2x)
+    Rule 8: Three MA System (SMA10 > SMA20 > SMA50 + pullback)
 
 Trading Plan Default:
     - Take Profit: +10%
@@ -94,18 +104,17 @@ Trading Plan Default:
 
 Signal Detection Modes:
     - relaxed (default): Easier thresholds for more signals
-        * Rule 1: 3 consecutive days instead of 9
-        * Rule 2: 3%+ gain instead of 8%
-        * Rule 3: 30% shadow ratio instead of 50%
     - strict: Original rules exactly as defined
         """
     )
 
     # Rule selection
-    parser.add_argument('--rule', '-r', type=int, choices=[1, 2, 3],
-                        help='Run backtest untuk rule tertentu (1, 2, atau 3)')
+    parser.add_argument('--rule', '-r', type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8],
+                        help='Run backtest untuk rule tertentu (1-8)')
+    parser.add_argument('--rules', type=str,
+                        help='Run backtest untuk beberapa rules (e.g., "4,5,6")')
     parser.add_argument('--all', '-a', action='store_true',
-                        help='Run backtest untuk semua rules')
+                        help='Run backtest untuk semua rules (1-8)')
 
     # Period
     parser.add_argument('--period', '-p', type=str, default='1y',
@@ -157,11 +166,21 @@ Signal Detection Modes:
 
     # Determine rules
     if args.all:
-        rules = [1, 2, 3]
+        rules = [1, 2, 3, 4, 5, 6, 7, 8]
+    elif args.rules:
+        try:
+            rules = [int(r.strip()) for r in args.rules.split(',')]
+            for r in rules:
+                if r not in [1, 2, 3, 4, 5, 6, 7, 8]:
+                    print(f"{Colors.RED}Invalid rule: {r}. Must be 1-8{Colors.ENDC}")
+                    return 1
+        except ValueError:
+            print(f"{Colors.RED}Invalid rules format. Use: --rules 4,5,6{Colors.ENDC}")
+            return 1
     elif args.rule:
         rules = [args.rule]
     else:
-        print("Pilih --rule atau --all")
+        print("Pilih --rule, --rules, atau --all")
         parser.print_help()
         return 1
 

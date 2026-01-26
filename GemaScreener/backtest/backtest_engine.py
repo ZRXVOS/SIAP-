@@ -191,6 +191,275 @@ class BacktestEngine:
 
         return False, ""
 
+    def _check_rule4_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
+        """
+        Rule 4: RSI-2 Mean Reversion (Larry Connors)
+        Entry: Close > SMA(200) AND RSI(2) < 5
+        """
+        if idx < 200:
+            return False, ""
+
+        # Calculate RSI(2)
+        close = df['Close']
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+
+        avg_gain = gain.rolling(window=2, min_periods=2).mean()
+        avg_loss = loss.rolling(window=2, min_periods=2).mean()
+
+        rs = avg_gain / avg_loss
+        rsi_2 = 100 - (100 / (1 + rs))
+
+        # Calculate SMA(200)
+        sma_200 = close.rolling(window=200, min_periods=200).mean()
+
+        # Get current values
+        curr_close = close.iloc[idx]
+        curr_sma_200 = sma_200.iloc[idx]
+        curr_rsi_2 = rsi_2.iloc[idx]
+
+        if pd.isna(curr_rsi_2) or pd.isna(curr_sma_200):
+            return False, ""
+
+        # RSI threshold based on mode
+        rsi_threshold = 10 if self.config.mode == 'relaxed' else 5
+
+        # Entry conditions
+        if curr_close > curr_sma_200 and curr_rsi_2 < rsi_threshold:
+            row = df.iloc[idx]
+            volume = row.get('Volume', 0)
+            value = curr_close * volume if volume else 0
+            min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
+
+            if value > min_value:
+                return True, f"RSI2={curr_rsi_2:.1f}, >SMA200"
+
+        return False, ""
+
+    def _check_rule5_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
+        """
+        Rule 5: Dual MA Crossover
+        Entry: SMA(20) crosses above SMA(50) + Volume spike
+        """
+        if idx < 52:
+            return False, ""
+
+        close = df['Close']
+        volume = df['Volume']
+
+        sma_20 = close.rolling(window=20, min_periods=20).mean()
+        sma_50 = close.rolling(window=50, min_periods=50).mean()
+        sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
+
+        # Current and previous values
+        curr_sma_20 = sma_20.iloc[idx]
+        curr_sma_50 = sma_50.iloc[idx]
+        prev_sma_20 = sma_20.iloc[idx - 1]
+        prev_sma_50 = sma_50.iloc[idx - 1]
+        curr_close = close.iloc[idx]
+        curr_volume = volume.iloc[idx]
+        curr_sma_20_vol = sma_20_vol.iloc[idx]
+
+        if pd.isna(curr_sma_50) or pd.isna(prev_sma_50):
+            return False, ""
+
+        # Check Golden Cross (today or within last 3 days)
+        golden_cross = (prev_sma_20 <= prev_sma_50) and (curr_sma_20 > curr_sma_50)
+
+        # Alternative: Recent cross within 3 days
+        recent_cross = False
+        if curr_sma_20 > curr_sma_50:  # Currently bullish
+            for i in range(1, min(4, idx)):
+                if sma_20.iloc[idx - i] <= sma_50.iloc[idx - i]:
+                    recent_cross = True
+                    break
+
+        # Volume ratio
+        vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
+
+        # Thresholds
+        min_vol_ratio = 1.2 if self.config.mode == 'relaxed' else 1.5
+
+        if (golden_cross or recent_cross) and curr_close > curr_sma_20 and vol_ratio >= min_vol_ratio:
+            row = df.iloc[idx]
+            value = curr_close * curr_volume
+            min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
+
+            if value > min_value:
+                cross_type = "GoldenX" if golden_cross else "RecentX"
+                return True, f"{cross_type}, Vol {vol_ratio:.1f}x"
+
+        return False, ""
+
+    def _check_rule6_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
+        """
+        Rule 6: Bollinger Band Mean Reversion
+        Entry: Close < BB_Lower AND RSI(14) < 30 AND Close > SMA(200)
+        """
+        if idx < 200:
+            return False, ""
+
+        close = df['Close']
+
+        # Bollinger Bands
+        sma_20 = close.rolling(window=20, min_periods=20).mean()
+        std_20 = close.rolling(window=20, min_periods=20).std()
+        bb_lower = sma_20 - (2 * std_20)
+        bb_middle = sma_20
+
+        # SMA 200
+        sma_200 = close.rolling(window=200, min_periods=200).mean()
+
+        # RSI(14)
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.rolling(window=14, min_periods=14).mean()
+        avg_loss = loss.rolling(window=14, min_periods=14).mean()
+        rs = avg_gain / avg_loss
+        rsi_14 = 100 - (100 / (1 + rs))
+
+        # Current values
+        curr_close = close.iloc[idx]
+        curr_bb_lower = bb_lower.iloc[idx]
+        curr_sma_200 = sma_200.iloc[idx]
+        curr_rsi_14 = rsi_14.iloc[idx]
+
+        if pd.isna(curr_bb_lower) or pd.isna(curr_sma_200) or pd.isna(curr_rsi_14):
+            return False, ""
+
+        # Thresholds
+        rsi_threshold = 35 if self.config.mode == 'relaxed' else 30
+
+        # Entry conditions
+        if curr_close < curr_bb_lower and curr_close > curr_sma_200 and curr_rsi_14 < rsi_threshold:
+            row = df.iloc[idx]
+            volume = row.get('Volume', 0)
+            value = curr_close * volume if volume else 0
+            min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
+
+            if value > min_value:
+                percent_b = (curr_close - curr_bb_lower) / (bb_middle.iloc[idx] - curr_bb_lower) if bb_middle.iloc[idx] != curr_bb_lower else 0
+                return True, f"BB %B={percent_b:.2f}, RSI={curr_rsi_14:.0f}"
+
+        return False, ""
+
+    def _check_rule7_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
+        """
+        Rule 7: Breakout with Volume
+        Entry: Close > High(20) AND Volume > 2x average AND Bullish candle
+        """
+        if idx < 25:
+            return False, ""
+
+        close = df['Close']
+        high = df['High']
+        volume = df['Volume']
+        open_price = df['Open']
+
+        # 20-day high (excluding today)
+        high_20 = high.shift(1).rolling(window=20, min_periods=20).max()
+        sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
+
+        # Current values
+        curr_close = close.iloc[idx]
+        curr_open = open_price.iloc[idx]
+        curr_high_20 = high_20.iloc[idx]
+        curr_volume = volume.iloc[idx]
+        curr_sma_20_vol = sma_20_vol.iloc[idx]
+
+        if pd.isna(curr_high_20) or pd.isna(curr_sma_20_vol):
+            return False, ""
+
+        # Volume ratio
+        vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
+
+        # Breakout percentage
+        breakout_pct = ((curr_close - curr_high_20) / curr_high_20 * 100) if curr_high_20 > 0 else 0
+
+        # Is bullish
+        is_bullish = curr_close > curr_open
+
+        # Thresholds
+        min_vol_ratio = 1.5 if self.config.mode == 'relaxed' else 2.0
+        min_breakout_pct = 0.5 if self.config.mode == 'relaxed' else 1.0
+
+        if curr_close > curr_high_20 and vol_ratio >= min_vol_ratio and is_bullish and breakout_pct >= min_breakout_pct:
+            value = curr_close * curr_volume
+            min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
+
+            if value > min_value:
+                return True, f"Breakout +{breakout_pct:.1f}%, Vol {vol_ratio:.1f}x"
+
+        return False, ""
+
+    def _check_rule8_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
+        """
+        Rule 8: Three MA System
+        Entry: SMA(10) > SMA(20) > SMA(50) + Pullback to SMA(20) + Bullish
+        """
+        if idx < 55:
+            return False, ""
+
+        close = df['Close']
+        low = df['Low']
+        open_price = df['Open']
+
+        # Calculate MAs
+        sma_10 = close.rolling(window=10, min_periods=10).mean()
+        sma_20 = close.rolling(window=20, min_periods=20).mean()
+        sma_50 = close.rolling(window=50, min_periods=50).mean()
+
+        # Current values
+        curr_close = close.iloc[idx]
+        curr_low = low.iloc[idx]
+        curr_open = open_price.iloc[idx]
+        curr_sma_10 = sma_10.iloc[idx]
+        curr_sma_20 = sma_20.iloc[idx]
+        curr_sma_50 = sma_50.iloc[idx]
+
+        if pd.isna(curr_sma_50):
+            return False, ""
+
+        # Check bullish alignment
+        is_aligned = (curr_sma_10 > curr_sma_20) and (curr_sma_20 > curr_sma_50)
+
+        if not is_aligned:
+            return False, ""
+
+        # Check pullback to SMA20 (within 2% in last 3 days)
+        is_pullback = False
+        pullback_tolerance = 0.03 if self.config.mode == 'relaxed' else 0.02
+
+        for i in range(3):
+            if idx - i < 0:
+                break
+            day_low = low.iloc[idx - i]
+            day_sma_20 = sma_20.iloc[idx - i]
+            if day_low <= day_sma_20 * (1 + pullback_tolerance):
+                is_pullback = True
+                break
+
+        if not is_pullback:
+            return False, ""
+
+        # Close above SMA10 (recovery) and bullish candle
+        is_bullish = curr_close > curr_open
+        above_sma10 = curr_close > curr_sma_10
+
+        if is_bullish and above_sma10:
+            row = df.iloc[idx]
+            volume = row.get('Volume', 0)
+            value = curr_close * volume if volume else 0
+            min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
+
+            if value > min_value:
+                pullback_pct = ((curr_sma_10 - curr_low) / curr_sma_10 * 100) if curr_sma_10 > 0 else 0
+                return True, f"3MA Aligned, PB {pullback_pct:.1f}%"
+
+        return False, ""
+
     def _check_signal(self, df: pd.DataFrame, ticker: str, idx: int) -> Tuple[Optional[int], str]:
         """Check all rules for signal"""
         for rule_num in self.config.rules:
@@ -201,6 +470,16 @@ class BacktestEngine:
                     passed, detail = self._check_rule2_signal(df, idx)
                 elif rule_num == 3:
                     passed, detail = self._check_rule3_signal(df, idx)
+                elif rule_num == 4:
+                    passed, detail = self._check_rule4_signal(df, idx)
+                elif rule_num == 5:
+                    passed, detail = self._check_rule5_signal(df, idx)
+                elif rule_num == 6:
+                    passed, detail = self._check_rule6_signal(df, idx)
+                elif rule_num == 7:
+                    passed, detail = self._check_rule7_signal(df, idx)
+                elif rule_num == 8:
+                    passed, detail = self._check_rule8_signal(df, idx)
                 else:
                     continue
 
