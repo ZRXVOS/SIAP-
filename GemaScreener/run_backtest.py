@@ -204,7 +204,7 @@ Signal Detection Modes:
         show_progress=not args.quiet
     )
 
-    if not results or results.get('total_trades', 0) == 0:
+    if not results or results.get('summary', {}).get('total_trades', 0) == 0:
         print(f"{Colors.YELLOW}⚠️ Tidak ada trade yang dieksekusi dalam periode ini.{Colors.ENDC}")
         print("Kemungkinan penyebab:")
         print("  - Tidak ada signal yang match dengan rules")
