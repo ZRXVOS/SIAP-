@@ -84,12 +84,20 @@ Examples:
     python run_backtest.py --rule 2 --period 6m --export-excel
     python run_backtest.py --all --period 1y --telegram
     python run_backtest.py --rule 1 --start 2023-01-01 --end 2024-12-31
+    python run_backtest.py --all --period 1y --mode strict
 
 Trading Plan Default:
     - Take Profit: +10%
     - Stop Loss: -5%
     - Max Hold: 5 days
     - Position Size: 30%
+
+Signal Detection Modes:
+    - relaxed (default): Easier thresholds for more signals
+        * Rule 1: 3 consecutive days instead of 9
+        * Rule 2: 3%+ gain instead of 8%
+        * Rule 3: 30% shadow ratio instead of 50%
+    - strict: Original rules exactly as defined
         """
     )
 
@@ -117,6 +125,9 @@ Trading Plan Default:
                         help='Stop loss percentage (default: 0.05 = 5%%)')
     parser.add_argument('--max-hold', type=int, default=5,
                         help='Max holding days (default: 5)')
+    parser.add_argument('--mode', type=str, default='relaxed',
+                        choices=['relaxed', 'strict'],
+                        help='Signal detection mode (default: relaxed)')
 
     # Output options
     parser.add_argument('--export-excel', '-e', action='store_true',
@@ -169,7 +180,8 @@ Trading Plan Default:
         take_profit_pct=args.take_profit,
         stop_loss_pct=args.stop_loss,
         max_holding_days=args.max_hold,
-        rules=rules
+        rules=rules,
+        mode=args.mode
     )
 
     # Print config
@@ -181,6 +193,7 @@ Trading Plan Default:
         print(f"   Position: {config.position_size_pct*100:.0f}%")
         print(f"   TP/SL: +{config.take_profit_pct*100:.0f}% / -{config.stop_loss_pct*100:.0f}%")
         print(f"   Max Hold: {config.max_holding_days} days")
+        print(f"   Mode: {config.mode}")
         print()
 
     # Run backtest
