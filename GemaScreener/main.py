@@ -4,13 +4,22 @@ GemaScreener - Stock Screening Tool untuk IHSG
 Deteksi pergerakan bandar dan anomali volume
 
 Usage:
-    python main.py --all                    # Jalankan semua rumus
-    python main.py --rumus 1                # Jalankan rumus 1 saja
-    python main.py --rumus 2                # Jalankan rumus 2 saja
-    python main.py --rumus 3                # Jalankan rumus 3 saja
+    python main.py                          # Jalankan rules 4,5,6,7 (default)
+    python main.py --all                    # Jalankan rules 4,5,6,7
+    python main.py --rules 4,5,6,7          # Jalankan rules tertentu
+    python main.py --rumus 4                # Jalankan rumus 4 saja
+    python main.py --rumus 5                # Jalankan rumus 5 saja
+    python main.py --rumus 6                # Jalankan rumus 6 saja
+    python main.py --rumus 7                # Jalankan rumus 7 saja
     python main.py --all --auto             # Auto-schedule setiap 5 menit
     python main.py --all --no-telegram      # Tanpa kirim ke Telegram
     python main.py --test                   # Test koneksi Telegram
+
+Rules:
+    4: RSI-2 Mean Reversion (Larry Connors)
+    5: Dual MA Crossover (Golden Cross)
+    6: Bollinger Band Mean Reversion
+    7: Breakout with Volume
 """
 
 import argparse
@@ -29,7 +38,11 @@ from data_fetcher import (
 from rules import (
     check_rule1, RULE1_NAME,
     check_rule2, RULE2_NAME,
-    check_rule3, RULE3_NAME
+    check_rule3, RULE3_NAME,
+    check_rule4, RULE4_NAME,
+    check_rule5, RULE5_NAME,
+    check_rule6, RULE6_NAME,
+    check_rule7, RULE7_NAME
 )
 from telegram_alert import (
     send_screening_alert, send_combined_alert,
@@ -55,7 +68,8 @@ def print_header():
 def print_rule_header(rule_num: int):
     """Print header untuk setiap rumus"""
     rule_name = RUMUS_NAMES.get(rule_num, f"Rule {rule_num}")
-    emoji = "🔥" if rule_num == 1 else ("🚀" if rule_num == 2 else "🔄")
+    emojis = {1: "🔥", 2: "🚀", 3: "🔄", 4: "📉", 5: "📈", 6: "📊", 7: "💥"}
+    emoji = emojis.get(rule_num, "📌")
 
     print(f"\n{Colors.YELLOW}{'─'*60}{Colors.ENDC}")
     print(f"{Colors.BOLD}{emoji} RULE {rule_num}: {rule_name}{Colors.ENDC}")
@@ -124,6 +138,18 @@ def run_screening(rules: List[int], use_telegram: bool = True,
                     result = check_rule2(df, df_intraday, ticker)
                 elif rule_num == 3:
                     result = check_rule3(df, ticker)
+                elif rule_num == 4:
+                    passed, details = check_rule4(df)
+                    result = {'ticker': ticker, 'passed': passed, 'details': details, 'signals': [details.get('reason', '')]}
+                elif rule_num == 5:
+                    passed, details = check_rule5(df)
+                    result = {'ticker': ticker, 'passed': passed, 'details': details, 'signals': [details.get('reason', '')]}
+                elif rule_num == 6:
+                    passed, details = check_rule6(df)
+                    result = {'ticker': ticker, 'passed': passed, 'details': details, 'signals': [details.get('reason', '')]}
+                elif rule_num == 7:
+                    passed, details = check_rule7(df)
+                    result = {'ticker': ticker, 'passed': passed, 'details': details, 'signals': [details.get('reason', '')]}
                 else:
                     continue
 
@@ -252,14 +278,20 @@ Examples:
     parser.add_argument(
         '--all', '-a',
         action='store_true',
-        help='Jalankan semua rumus (1, 2, 3)'
+        help='Jalankan semua rumus (4, 5, 6, 7)'
     )
 
     parser.add_argument(
         '--rumus', '-r',
         type=int,
-        choices=[1, 2, 3],
-        help='Jalankan rumus tertentu (1, 2, atau 3)'
+        choices=[1, 2, 3, 4, 5, 6, 7],
+        help='Jalankan rumus tertentu (1-7)'
+    )
+
+    parser.add_argument(
+        '--rules',
+        type=str,
+        help='Jalankan beberapa rumus, pisahkan dengan koma (contoh: 4,5,6,7)'
     )
 
     parser.add_argument(
@@ -313,13 +345,15 @@ Examples:
 
     # Determine rules to run
     if args.all:
-        rules = [1, 2, 3]
+        rules = [4, 5, 6, 7]  # Default ke rules yang sudah di-optimize
+    elif args.rules:
+        # Parse comma-separated rules
+        rules = [int(r.strip()) for r in args.rules.split(',')]
     elif args.rumus:
         rules = [args.rumus]
     else:
-        # Default: show help
-        parser.print_help()
-        return
+        # Default: jalankan rules 4, 5, 6, 7
+        rules = [4, 5, 6, 7]
 
     use_telegram = not args.no_telegram
 

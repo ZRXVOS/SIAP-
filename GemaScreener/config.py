@@ -77,5 +77,9 @@ class Colors:
 RUMUS_NAMES = {
     1: "9 Hari Konsisten Naik",
     2: "Breakout Kuat + Momentum",
-    3: "Reversal / Hammer Pattern"
+    3: "Reversal / Hammer Pattern",
+    4: "RSI-2 Mean Reversion",
+    5: "Dual MA Crossover",
+    6: "Bollinger Mean Reversion",
+    7: "Breakout Volume"
 }
