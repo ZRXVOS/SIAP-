@@ -210,8 +210,26 @@ Signal Detection Modes:
         print(f"   Period: {start_date} to {end_date}")
         print(f"   Capital: Rp {config.initial_capital:,.0f}")
         print(f"   Position: {config.position_size_pct*100:.0f}%")
-        print(f"   TP/SL: +{config.take_profit_pct*100:.0f}% / -{config.stop_loss_pct*100:.0f}%")
-        print(f"   Max Hold: {config.max_holding_days} days")
+
+        # Show rule-specific TP/SL for rules 4-7
+        has_new_rules = any(r in [4, 5, 6, 7] for r in rules)
+        has_old_rules = any(r in [1, 2, 3] for r in rules)
+
+        if has_new_rules:
+            print(f"   Exit Strategy: Per-Rule (Optimized)")
+            for r in rules:
+                if r == 4:
+                    print(f"      Rule 4: Exit RSI>60 + Close>SMA5, Disaster -20%, Max 20d")
+                elif r == 5:
+                    print(f"      Rule 5: TP +15%, SL -8%, Breakdown, Max 20d")
+                elif r == 6:
+                    print(f"      Rule 6: TP +10% or BB_Mid, Disaster -8%, Max 20d")
+                elif r == 7:
+                    print(f"      Rule 7: TP +20%, Support-based SL, Max 15d")
+        if has_old_rules:
+            print(f"   TP/SL (Rules 1-3): +{config.take_profit_pct*100:.0f}% / -{config.stop_loss_pct*100:.0f}%")
+            print(f"   Max Hold (Rules 1-3): {config.max_holding_days} days")
+
         print(f"   Mode: {config.mode}")
         print()
 

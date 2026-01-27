@@ -813,8 +813,27 @@ class BacktestEngine:
         print(f"Rules: {self.config.rules}")
         print(f"Mode: {self.config.mode}")
         print(f"Tickers: {len(tickers)}")
-        print(f"Exit Strategy: Per-Rule (from Journal)")
-        print(f"{'='*60}\n")
+
+        # Show rule-specific settings
+        for r in self.config.rules:
+            if r == 4:
+                print(f"\n📌 Rule 4: RSI-2 Mean Reversion")
+                print(f"   Entry: RSI(2) < 5, Close > SMA200")
+                print(f"   Exit: Close > SMA5 + RSI > 60, Disaster -20%, Time 20d")
+            elif r == 5:
+                print(f"\n📌 Rule 5: Dual MA Crossover")
+                print(f"   Entry: Golden Cross, Vol 1.5x, RSI > 50, ADX > 20")
+                print(f"   Exit: TP +15%, SL -8%, Breakdown < SMA50, Time 20d")
+            elif r == 6:
+                print(f"\n📌 Rule 6: Bollinger Mean Reversion")
+                print(f"   Entry: Close < BB_Lower, %B < 0, RSI < 30")
+                print(f"   Exit: TP +10% or BB_Middle, Disaster -8%, Time 20d")
+            elif r == 7:
+                print(f"\n📌 Rule 7: Breakout Volume")
+                print(f"   Entry: Breakout 2%+, Vol 2x, Base Pattern")
+                print(f"   Exit: TP +20%, Support-based SL, Time 15d")
+
+        print(f"\n{'='*60}\n")
 
         # Load and process all data
         all_data = {}
