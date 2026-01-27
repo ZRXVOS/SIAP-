@@ -239,8 +239,9 @@ class BacktestEngine:
 
     def _check_rule5_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 5: Dual MA Crossover
-        Entry: SMA(20) crosses above SMA(50) + Volume spike
+        Rule 5: Dual MA Crossover (SWING TRADING OPTIMIZED)
+        Entry: SMA(20) crosses above SMA(50) + Volume spike + RSI > 50
+        Optimized for 3-10 day swing trades
         """
         if idx < 52:
             return False, ""
@@ -252,6 +253,15 @@ class BacktestEngine:
         sma_50 = close.rolling(window=50, min_periods=50).mean()
         sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
 
+        # Calculate RSI(14) for momentum filter
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.rolling(window=14, min_periods=14).mean()
+        avg_loss = loss.rolling(window=14, min_periods=14).mean()
+        rs = avg_gain / avg_loss
+        rsi_14 = 100 - (100 / (1 + rs))
+
         # Current and previous values
         curr_sma_20 = sma_20.iloc[idx]
         curr_sma_50 = sma_50.iloc[idx]
@@ -260,6 +270,7 @@ class BacktestEngine:
         curr_close = close.iloc[idx]
         curr_volume = volume.iloc[idx]
         curr_sma_20_vol = sma_20_vol.iloc[idx]
+        curr_rsi = rsi_14.iloc[idx] if idx >= 14 else 50
 
         if pd.isna(curr_sma_50) or pd.isna(prev_sma_50):
             return False, ""
@@ -280,15 +291,21 @@ class BacktestEngine:
 
         # Thresholds
         min_vol_ratio = 1.2 if self.config.mode == 'relaxed' else 1.5
+        min_rsi = 45 if self.config.mode == 'relaxed' else 50  # RSI filter for momentum
 
+        # SWING TRADING: Add RSI > 50 filter for momentum confirmation
         if (golden_cross or recent_cross) and curr_close > curr_sma_20 and vol_ratio >= min_vol_ratio:
+            # RSI filter - only enter when momentum is positive
+            if pd.isna(curr_rsi) or curr_rsi < min_rsi:
+                return False, ""
+
             row = df.iloc[idx]
             value = curr_close * curr_volume
             min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
 
             if value > min_value:
                 cross_type = "GoldenX" if golden_cross else "RecentX"
-                return True, f"{cross_type}, Vol {vol_ratio:.1f}x"
+                return True, f"{cross_type}, Vol {vol_ratio:.1f}x, RSI {curr_rsi:.0f}"
 
         return False, ""
 
@@ -396,8 +413,9 @@ class BacktestEngine:
 
     def _check_rule8_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 8: Three MA System
-        Entry: SMA(10) > SMA(20) > SMA(50) + Pullback to SMA(20) + Bullish
+        Rule 8: Three MA System (SWING TRADING OPTIMIZED)
+        Entry: SMA(10) > SMA(20) > SMA(50) + Pullback to SMA(20) + Bullish + Volume
+        Optimized for 3-10 day swing trades
         """
         if idx < 55:
             return False, ""
@@ -405,11 +423,13 @@ class BacktestEngine:
         close = df['Close']
         low = df['Low']
         open_price = df['Open']
+        volume = df['Volume']
 
         # Calculate MAs
         sma_10 = close.rolling(window=10, min_periods=10).mean()
         sma_20 = close.rolling(window=20, min_periods=20).mean()
         sma_50 = close.rolling(window=50, min_periods=50).mean()
+        sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
 
         # Current values
         curr_close = close.iloc[idx]
@@ -418,6 +438,8 @@ class BacktestEngine:
         curr_sma_10 = sma_10.iloc[idx]
         curr_sma_20 = sma_20.iloc[idx]
         curr_sma_50 = sma_50.iloc[idx]
+        curr_volume = volume.iloc[idx]
+        curr_sma_20_vol = sma_20_vol.iloc[idx]
 
         if pd.isna(curr_sma_50):
             return False, ""
@@ -428,7 +450,7 @@ class BacktestEngine:
         if not is_aligned:
             return False, ""
 
-        # Check pullback to SMA20 (within 2% in last 3 days)
+        # Check pullback to SMA20 (within 2-3% in last 3 days)
         is_pullback = False
         pullback_tolerance = 0.03 if self.config.mode == 'relaxed' else 0.02
 
@@ -448,15 +470,18 @@ class BacktestEngine:
         is_bullish = curr_close > curr_open
         above_sma10 = curr_close > curr_sma_10
 
-        if is_bullish and above_sma10:
+        # SWING TRADING: Add volume confirmation on pullback recovery
+        vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
+        min_vol_ratio = 1.0 if self.config.mode == 'relaxed' else 1.2  # Volume at least average
+
+        if is_bullish and above_sma10 and vol_ratio >= min_vol_ratio:
             row = df.iloc[idx]
-            volume = row.get('Volume', 0)
-            value = curr_close * volume if volume else 0
+            value = curr_close * curr_volume if curr_volume else 0
             min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
 
             if value > min_value:
                 pullback_pct = ((curr_sma_10 - curr_low) / curr_sma_10 * 100) if curr_sma_10 > 0 else 0
-                return True, f"3MA Aligned, PB {pullback_pct:.1f}%"
+                return True, f"3MA Aligned, PB {pullback_pct:.1f}%, Vol {vol_ratio:.1f}x"
 
         return False, ""
 
@@ -546,8 +571,8 @@ class BacktestEngine:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 5: Dual MA Crossover
-        # EXIT: Death Cross (SMA20 < SMA50) OR Close < SMA50
+        # RULE 5: Dual MA Crossover (SWING TRADING OPTIMIZED)
+        # EXIT: Trailing Stop OR Close < SMA20 OR Time Exit 10 days
         # ============================================================
         elif rule == 5:
             sma_20 = close.rolling(window=20, min_periods=20).mean()
@@ -558,17 +583,41 @@ class BacktestEngine:
             prev_sma_20 = sma_20.iloc[idx-1] if idx >= 21 else None
             prev_sma_50 = sma_50.iloc[idx-1] if idx >= 51 else None
 
-            # Death Cross
-            if all(v is not None for v in [curr_sma_20, curr_sma_50, prev_sma_20, prev_sma_50]):
-                if prev_sma_20 >= prev_sma_50 and curr_sma_20 < curr_sma_50:
-                    return True, "DEATH_CROSS", curr_close
+            # Calculate ATR for trailing stop
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_14 = tr.rolling(window=14, min_periods=14).mean()
+            curr_atr = atr_14.iloc[idx] if idx >= 14 else None
 
-            # Close below SMA50
+            # Calculate highest high since entry for trailing stop
+            entry_idx = idx - days_held
+            if entry_idx >= 0 and days_held > 0:
+                highest_since_entry = high.iloc[entry_idx:idx+1].max()
+            else:
+                highest_since_entry = entry_price
+
+            # SWING EXIT 1: Take Profit +8% (quick profit)
+            if curr_close >= entry_price * 1.08:
+                return True, "TAKE_PROFIT", curr_close
+
+            # SWING EXIT 2: Trailing Stop from highest (1.5x ATR)
+            if curr_atr is not None and days_held >= 2:
+                trailing_stop = highest_since_entry - (1.5 * curr_atr)
+                if curr_close < trailing_stop and curr_close < highest_since_entry * 0.97:
+                    return True, "TRAILING_STOP", curr_close
+
+            # SWING EXIT 3: Close below SMA20 (short-term trend break)
+            if curr_sma_20 is not None and curr_close < curr_sma_20:
+                return True, "MOMENTUM_LOSS", curr_close
+
+            # SWING EXIT 4: Close below SMA50 (major breakdown)
             if curr_sma_50 is not None and curr_close < curr_sma_50:
                 return True, "BREAKDOWN", curr_close
 
-            # Max hold 30 days
-            if days_held >= 30:
+            # SWING EXIT 5: Max hold 10 days (swing trade limit)
+            if days_held >= 10:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
@@ -616,8 +665,8 @@ class BacktestEngine:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 8: Three MA System
-        # EXIT: SMA(10) < SMA(20) OR Close < SMA(50) OR Trailing Stop
+        # RULE 8: Three MA System (SWING TRADING OPTIMIZED)
+        # EXIT: Trailing Stop from High OR Close < SMA10 OR Time Exit 10 days
         # ============================================================
         elif rule == 8:
             sma_10 = close.rolling(window=10, min_periods=10).mean()
@@ -628,17 +677,7 @@ class BacktestEngine:
             curr_sma_20 = sma_20.iloc[idx] if idx >= 20 else None
             curr_sma_50 = sma_50.iloc[idx] if idx >= 50 else None
 
-            # MA Cross Down: SMA10 < SMA20
-            if curr_sma_10 is not None and curr_sma_20 is not None:
-                if curr_sma_10 < curr_sma_20:
-                    return True, "MA_CROSS_DOWN", curr_close
-
-            # Breakdown: Close < SMA50
-            if curr_sma_50 is not None and curr_close < curr_sma_50:
-                return True, "BREAKDOWN", curr_close
-
-            # Trailing Stop: 2x ATR
-            # Calculate ATR
+            # Calculate ATR for trailing stop
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
@@ -646,13 +685,38 @@ class BacktestEngine:
             atr_14 = tr.rolling(window=14, min_periods=14).mean()
             curr_atr = atr_14.iloc[idx] if idx >= 14 else None
 
-            if curr_atr is not None:
-                trailing_stop = entry_price - (2 * curr_atr)
-                if curr_close < trailing_stop:
+            # Calculate highest high since entry for trailing stop
+            entry_idx = idx - days_held
+            if entry_idx >= 0 and days_held > 0:
+                highest_since_entry = high.iloc[entry_idx:idx+1].max()
+            else:
+                highest_since_entry = entry_price
+
+            # SWING EXIT 1: Take Profit +10% (target hit)
+            if curr_close >= entry_price * 1.10:
+                return True, "TAKE_PROFIT", curr_close
+
+            # SWING EXIT 2: Trailing Stop from highest (1.5x ATR)
+            if curr_atr is not None and days_held >= 2:
+                trailing_stop = highest_since_entry - (1.5 * curr_atr)
+                if curr_close < trailing_stop and curr_close < highest_since_entry * 0.96:
                     return True, "TRAILING_STOP", curr_close
 
-            # Max hold 20 days
-            if days_held >= 20:
+            # SWING EXIT 3: Close below SMA10 (quick momentum loss)
+            if curr_sma_10 is not None and curr_close < curr_sma_10:
+                return True, "MOMENTUM_LOSS", curr_close
+
+            # SWING EXIT 4: MA Cross Down (SMA10 < SMA20)
+            if curr_sma_10 is not None and curr_sma_20 is not None:
+                if curr_sma_10 < curr_sma_20:
+                    return True, "MA_CROSS_DOWN", curr_close
+
+            # SWING EXIT 5: Breakdown below SMA50
+            if curr_sma_50 is not None and curr_close < curr_sma_50:
+                return True, "BREAKDOWN", curr_close
+
+            # SWING EXIT 6: Max hold 10 days (swing trade limit)
+            if days_held >= 10:
                 return True, "TIME_EXIT", curr_close
 
         return False, None, None
