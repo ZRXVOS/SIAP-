@@ -193,8 +193,9 @@ class BacktestEngine:
 
     def _check_rule4_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 4: RSI-2 Mean Reversion (Larry Connors)
-        Entry: Close > SMA(200) AND RSI(2) < 5
+        Rule 4: RSI-2 Mean Reversion (Larry Connors) - OPTIMIZED
+        Entry: Close > SMA(200) AND RSI(2) < 5 (strict threshold)
+        Exit: Close > SMA(5) AND RSI(2) > 60, Disaster Stop -20%, Time 20 days
         """
         if idx < 200:
             return False, ""
@@ -222,10 +223,10 @@ class BacktestEngine:
         if pd.isna(curr_rsi_2) or pd.isna(curr_sma_200):
             return False, ""
 
-        # RSI threshold based on mode
-        rsi_threshold = 10 if self.config.mode == 'relaxed' else 5
+        # RSI threshold - STRICT: < 5 for higher win rate
+        rsi_threshold = 5
 
-        # Entry conditions
+        # Entry conditions: Close > SMA(200) AND RSI(2) < 5
         if curr_close > curr_sma_200 and curr_rsi_2 < rsi_threshold:
             row = df.iloc[idx]
             volume = row.get('Volume', 0)
@@ -239,14 +240,17 @@ class BacktestEngine:
 
     def _check_rule5_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 5: Dual MA Crossover (SWING TRADING OPTIMIZED)
-        Entry: SMA(20) crosses above SMA(50) + Volume spike + RSI > 50
-        Optimized for 3-10 day swing trades
+        Rule 5: Dual MA Crossover - OPTIMIZED
+        Entry: Golden Cross + Volume 1.5x + RSI > 50 + ADX > 20
+        Exit: TP +15%, SL -8%, Breakdown < SMA50, Time 20 days
+        NO Trailing Stop, NO Momentum Loss
         """
         if idx < 52:
             return False, ""
 
         close = df['Close']
+        high = df['High']
+        low = df['Low']
         volume = df['Volume']
 
         sma_20 = close.rolling(window=20, min_periods=20).mean()
@@ -262,6 +266,23 @@ class BacktestEngine:
         rs = avg_gain / avg_loss
         rsi_14 = 100 - (100 / (1 + rs))
 
+        # Calculate ADX(14) for trend strength
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        atr_14 = tr.rolling(window=14, min_periods=14).mean()
+        plus_di = 100 * (plus_dm.rolling(window=14).mean() / atr_14)
+        minus_di = 100 * (minus_dm.rolling(window=14).mean() / atr_14)
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(window=14, min_periods=14).mean()
+
         # Current and previous values
         curr_sma_20 = sma_20.iloc[idx]
         curr_sma_50 = sma_50.iloc[idx]
@@ -271,6 +292,7 @@ class BacktestEngine:
         curr_volume = volume.iloc[idx]
         curr_sma_20_vol = sma_20_vol.iloc[idx]
         curr_rsi = rsi_14.iloc[idx] if idx >= 14 else 50
+        curr_adx = adx.iloc[idx] if idx >= 28 else 25  # Default to 25 if not enough data
 
         if pd.isna(curr_sma_50) or pd.isna(prev_sma_50):
             return False, ""
@@ -289,14 +311,19 @@ class BacktestEngine:
         # Volume ratio
         vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
 
-        # Thresholds
-        min_vol_ratio = 1.2 if self.config.mode == 'relaxed' else 1.5
-        min_rsi = 45 if self.config.mode == 'relaxed' else 50  # RSI filter for momentum
+        # Thresholds - OPTIMIZED
+        min_vol_ratio = 1.5  # Volume 1.5x average
+        min_rsi = 50         # RSI > 50 for momentum
+        min_adx = 20         # ADX > 20 for trend strength
 
-        # SWING TRADING: Add RSI > 50 filter for momentum confirmation
+        # Entry: Golden Cross + Volume + RSI > 50 + ADX > 20
         if (golden_cross or recent_cross) and curr_close > curr_sma_20 and vol_ratio >= min_vol_ratio:
-            # RSI filter - only enter when momentum is positive
+            # RSI filter - momentum positive
             if pd.isna(curr_rsi) or curr_rsi < min_rsi:
+                return False, ""
+
+            # ADX filter - trend strength
+            if pd.isna(curr_adx) or curr_adx < min_adx:
                 return False, ""
 
             row = df.iloc[idx]
@@ -305,14 +332,15 @@ class BacktestEngine:
 
             if value > min_value:
                 cross_type = "GoldenX" if golden_cross else "RecentX"
-                return True, f"{cross_type}, Vol {vol_ratio:.1f}x, RSI {curr_rsi:.0f}"
+                return True, f"{cross_type}, Vol {vol_ratio:.1f}x, RSI {curr_rsi:.0f}, ADX {curr_adx:.0f}"
 
         return False, ""
 
     def _check_rule6_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 6: Bollinger Band Mean Reversion
-        Entry: Close < BB_Lower AND RSI(14) < 30 AND Close > SMA(200)
+        Rule 6: Bollinger Band Mean Reversion - OPTIMIZED
+        Entry: Close < BB_Lower AND %B < 0 AND RSI(14) < 30 AND Close > SMA(200)
+        Exit: TP +10% or BB_Middle, Disaster Stop -8%, Time 20 days
         """
         if idx < 200:
             return False, ""
@@ -323,7 +351,13 @@ class BacktestEngine:
         sma_20 = close.rolling(window=20, min_periods=20).mean()
         std_20 = close.rolling(window=20, min_periods=20).std()
         bb_lower = sma_20 - (2 * std_20)
+        bb_upper = sma_20 + (2 * std_20)
         bb_middle = sma_20
+
+        # Calculate %B (Bollinger Band position indicator)
+        # %B = (Close - BB_Lower) / (BB_Upper - BB_Lower)
+        # %B < 0 means price is BELOW lower band
+        percent_b = (close - bb_lower) / (bb_upper - bb_lower)
 
         # SMA 200
         sma_200 = close.rolling(window=200, min_periods=200).mean()
@@ -342,72 +376,86 @@ class BacktestEngine:
         curr_bb_lower = bb_lower.iloc[idx]
         curr_sma_200 = sma_200.iloc[idx]
         curr_rsi_14 = rsi_14.iloc[idx]
+        curr_percent_b = percent_b.iloc[idx]
 
         if pd.isna(curr_bb_lower) or pd.isna(curr_sma_200) or pd.isna(curr_rsi_14):
             return False, ""
 
-        # Thresholds
-        rsi_threshold = 35 if self.config.mode == 'relaxed' else 30
+        # Thresholds - STRICT
+        rsi_threshold = 30  # RSI < 30 for confirmed oversold
 
-        # Entry conditions
-        if curr_close < curr_bb_lower and curr_close > curr_sma_200 and curr_rsi_14 < rsi_threshold:
+        # Entry conditions: Close < BB_Lower AND %B < 0 AND RSI < 30 AND Close > SMA(200)
+        if curr_close < curr_bb_lower and curr_percent_b < 0 and curr_close > curr_sma_200 and curr_rsi_14 < rsi_threshold:
             row = df.iloc[idx]
             volume = row.get('Volume', 0)
             value = curr_close * volume if volume else 0
             min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
 
             if value > min_value:
-                percent_b = (curr_close - curr_bb_lower) / (bb_middle.iloc[idx] - curr_bb_lower) if bb_middle.iloc[idx] != curr_bb_lower else 0
-                return True, f"BB %B={percent_b:.2f}, RSI={curr_rsi_14:.0f}"
+                return True, f"BB %B={curr_percent_b:.2f}, RSI={curr_rsi_14:.0f}"
 
         return False, ""
 
     def _check_rule7_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 7: Breakout with Volume
-        Entry: Close > High(20) AND Volume > 2x average AND Bullish candle
+        Rule 7: Breakout with Volume - OPTIMIZED
+        Entry: Close > High(20) AND Volume > 2x AND Breakout >= 2% AND Base Pattern 5 days
+        Exit: TP +20%, Support-based Stop Loss, Time 15 days
         """
-        if idx < 25:
+        if idx < 30:
             return False, ""
 
         close = df['Close']
         high = df['High']
+        low = df['Low']
         volume = df['Volume']
         open_price = df['Open']
 
         # 20-day high (excluding today)
         high_20 = high.shift(1).rolling(window=20, min_periods=20).max()
+        low_20 = low.shift(1).rolling(window=20, min_periods=20).min()
         sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
 
         # Current values
         curr_close = close.iloc[idx]
         curr_open = open_price.iloc[idx]
         curr_high_20 = high_20.iloc[idx]
+        curr_low_20 = low_20.iloc[idx]
         curr_volume = volume.iloc[idx]
         curr_sma_20_vol = sma_20_vol.iloc[idx]
 
         if pd.isna(curr_high_20) or pd.isna(curr_sma_20_vol):
             return False, ""
 
-        # Volume ratio
+        # Volume ratio - STRICT: Volume > 2x average
         vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
 
-        # Breakout percentage
+        # Breakout percentage - STRICT: >= 2%
         breakout_pct = ((curr_close - curr_high_20) / curr_high_20 * 100) if curr_high_20 > 0 else 0
 
-        # Is bullish
+        # Is bullish candle
         is_bullish = curr_close > curr_open
 
-        # Thresholds
-        min_vol_ratio = 1.5 if self.config.mode == 'relaxed' else 2.0
-        min_breakout_pct = 0.5 if self.config.mode == 'relaxed' else 1.0
+        # Check Base Pattern: Price range in last 5 days < 10% (consolidation)
+        if idx >= 5:
+            last_5_high = high.iloc[idx-5:idx].max()
+            last_5_low = low.iloc[idx-5:idx].min()
+            consolidation_range = ((last_5_high - last_5_low) / last_5_low * 100) if last_5_low > 0 else 100
+            has_base = consolidation_range < 10  # Range < 10% = consolidation
+        else:
+            has_base = False
 
-        if curr_close > curr_high_20 and vol_ratio >= min_vol_ratio and is_bullish and breakout_pct >= min_breakout_pct:
+        # Thresholds - STRICT
+        min_vol_ratio = 2.0    # Volume > 2x average
+        min_breakout_pct = 2.0  # Breakout >= 2%
+
+        # Entry: Breakout + Volume 2x + Bullish + Breakout 2% + Base Pattern
+        if curr_close > curr_high_20 and vol_ratio >= min_vol_ratio and is_bullish and breakout_pct >= min_breakout_pct and has_base:
             value = curr_close * curr_volume
             min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
 
             if value > min_value:
-                return True, f"Breakout +{breakout_pct:.1f}%, Vol {vol_ratio:.1f}x"
+                return True, f"Breakout +{breakout_pct:.1f}%, Vol {vol_ratio:.1f}x, Base OK"
 
         return False, ""
 
@@ -553,114 +601,131 @@ class BacktestEngine:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 4: RSI-2 Mean Reversion (Larry Connors)
-        # EXIT: Close > SMA(5) - NO STOP LOSS!
-        # Max hold: 5 days
+        # RULE 4: RSI-2 Mean Reversion (Larry Connors) - OPTIMIZED
+        # EXIT: Close > SMA(5) AND RSI(2) > 60 (stronger confirmation)
+        # Disaster Stop: -20%, Time: 20 days
         # ============================================================
         elif rule == 4:
             # Calculate SMA(5)
             sma_5 = close.rolling(window=5, min_periods=5).mean()
             curr_sma_5 = sma_5.iloc[idx] if idx >= 5 else None
 
-            # Exit when close > SMA(5) - mean reversion complete
-            if curr_sma_5 is not None and curr_close > curr_sma_5:
-                return True, "MEAN_REVERSION", curr_close
+            # Calculate RSI(2) for exit confirmation
+            delta = close.diff()
+            gain = delta.where(delta > 0, 0.0)
+            loss_series = -delta.where(delta < 0, 0.0)
+            avg_gain = gain.rolling(window=2, min_periods=2).mean()
+            avg_loss = loss_series.rolling(window=2, min_periods=2).mean()
+            rs = avg_gain / avg_loss
+            rsi_2 = 100 - (100 / (1 + rs))
+            curr_rsi_2 = rsi_2.iloc[idx] if idx >= 2 else 50
 
-            # Time exit only (NO STOP LOSS per Connors research)
-            if days_held >= 5:
+            # EXIT 1: Mean Reversion Complete - Close > SMA(5) AND RSI(2) > 60
+            if curr_sma_5 is not None and not pd.isna(curr_rsi_2):
+                if curr_close > curr_sma_5 and curr_rsi_2 > 60:
+                    return True, "MEAN_REVERSION", curr_close
+
+            # EXIT 2: Disaster Stop -20% (black swan protection)
+            if curr_close <= entry_price * 0.80:
+                return True, "DISASTER_STOP", curr_close
+
+            # EXIT 3: Time exit 20 days (extended from 5)
+            if days_held >= 20:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 5: Dual MA Crossover (SWING TRADING OPTIMIZED)
-        # EXIT: Trailing Stop OR Close < SMA20 OR Time Exit 10 days
+        # RULE 5: Dual MA Crossover - OPTIMIZED
+        # EXIT: TP +15%, SL -8%, Breakdown < SMA50, Time 20 days
+        # NO Trailing Stop, NO Momentum Loss (removed)
         # ============================================================
         elif rule == 5:
-            sma_20 = close.rolling(window=20, min_periods=20).mean()
             sma_50 = close.rolling(window=50, min_periods=50).mean()
-
-            curr_sma_20 = sma_20.iloc[idx] if idx >= 20 else None
             curr_sma_50 = sma_50.iloc[idx] if idx >= 50 else None
-            prev_sma_20 = sma_20.iloc[idx-1] if idx >= 21 else None
-            prev_sma_50 = sma_50.iloc[idx-1] if idx >= 51 else None
 
-            # Calculate ATR for trailing stop
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr_14 = tr.rolling(window=14, min_periods=14).mean()
-            curr_atr = atr_14.iloc[idx] if idx >= 14 else None
-
-            # Calculate highest high since entry for trailing stop
-            entry_idx = idx - days_held
-            if entry_idx >= 0 and days_held > 0:
-                highest_since_entry = high.iloc[entry_idx:idx+1].max()
-            else:
-                highest_since_entry = entry_price
-
-            # SWING EXIT 1: Take Profit +8% (quick profit)
-            if curr_close >= entry_price * 1.08:
+            # EXIT 1: Take Profit +15%
+            if curr_close >= entry_price * 1.15:
                 return True, "TAKE_PROFIT", curr_close
 
-            # SWING EXIT 2: Trailing Stop from highest (1.5x ATR)
-            if curr_atr is not None and days_held >= 2:
-                trailing_stop = highest_since_entry - (1.5 * curr_atr)
-                if curr_close < trailing_stop and curr_close < highest_since_entry * 0.97:
-                    return True, "TRAILING_STOP", curr_close
+            # EXIT 2: Stop Loss -8%
+            if curr_close <= entry_price * 0.92:
+                return True, "STOP_LOSS", curr_close
 
-            # SWING EXIT 3: Close below SMA20 (short-term trend break)
-            if curr_sma_20 is not None and curr_close < curr_sma_20:
-                return True, "MOMENTUM_LOSS", curr_close
-
-            # SWING EXIT 4: Close below SMA50 (major breakdown)
+            # EXIT 3: Breakdown - Close below SMA50 (major trend break)
             if curr_sma_50 is not None and curr_close < curr_sma_50:
                 return True, "BREAKDOWN", curr_close
 
-            # SWING EXIT 5: Max hold 10 days (swing trade limit)
-            if days_held >= 10:
+            # EXIT 4: Time exit 20 days
+            if days_held >= 20:
                 return True, "TIME_EXIT", curr_close
 
+            # REMOVED: Trailing Stop (was causing -177M loss)
+            # REMOVED: Momentum Loss Close < SMA20 (too sensitive)
+
         # ============================================================
-        # RULE 6: Bollinger Band Mean Reversion
-        # EXIT: Close > BB_Middle (return to mean) - NO STOP LOSS!
+        # RULE 6: Bollinger Band Mean Reversion - OPTIMIZED
+        # EXIT: TP +10% OR BB_Middle, Disaster Stop -8%, Time 20 days
         # ============================================================
         elif rule == 6:
             # Calculate Bollinger Bands
             sma_20 = close.rolling(window=20, min_periods=20).mean()
             curr_bb_middle = sma_20.iloc[idx] if idx >= 20 else None
 
-            # Exit when close > BB Middle (mean reversion complete)
+            # EXIT 1: Take Profit +10%
+            if curr_close >= entry_price * 1.10:
+                return True, "TAKE_PROFIT", curr_close
+
+            # EXIT 2: Mean Reversion Complete - Close > BB Middle
             if curr_bb_middle is not None and curr_close > curr_bb_middle:
                 return True, "MEAN_REVERSION", curr_close
 
-            # Time exit only (NO STOP LOSS for mean reversion)
-            if days_held >= 10:
+            # EXIT 3: Disaster Stop -8% (protection)
+            if curr_close <= entry_price * 0.92:
+                return True, "DISASTER_STOP", curr_close
+
+            # EXIT 4: Time exit 20 days
+            if days_held >= 20:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 7: Breakout with Volume
-        # EXIT: TP +10%, SL -5%, or Close < SMA(10)
+        # RULE 7: Breakout with Volume - OPTIMIZED
+        # EXIT: TP +20%, Support-based Stop Loss (Breakout Level - ATR)
         # ============================================================
         elif rule == 7:
-            tp_price = entry_price * 1.10  # +10%
-            sl_price = entry_price * 0.95  # -5%
+            # Calculate ATR for support-based stop
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_14 = tr.rolling(window=14, min_periods=14).mean()
+            curr_atr = atr_14.iloc[idx] if idx >= 14 else entry_price * 0.03
 
-            # Take Profit
-            if curr_high >= tp_price:
-                return True, "TAKE_PROFIT", tp_price
+            # Calculate 20-day high (breakout level) at entry
+            high_20 = high.shift(1).rolling(window=20, min_periods=20).max()
+            entry_idx = idx - days_held
+            if entry_idx >= 20:
+                breakout_level = high_20.iloc[entry_idx]
+            else:
+                breakout_level = entry_price * 0.97  # Fallback
 
-            # Stop Loss
-            if curr_low <= sl_price:
-                return True, "STOP_LOSS", sl_price
+            # Support-based Stop Loss: Breakout Level - 1x ATR
+            support_stop = breakout_level - curr_atr
 
-            # Momentum loss: Close < SMA(10)
+            # EXIT 1: Take Profit +20%
+            if curr_close >= entry_price * 1.20:
+                return True, "TAKE_PROFIT", curr_close
+
+            # EXIT 2: Support-based Stop Loss
+            if curr_close <= support_stop:
+                return True, "STOP_LOSS", curr_close
+
+            # EXIT 3: Momentum loss - Close < SMA(10)
             sma_10 = close.rolling(window=10, min_periods=10).mean()
             curr_sma_10 = sma_10.iloc[idx] if idx >= 10 else None
 
             if curr_sma_10 is not None and curr_close < curr_sma_10:
                 return True, "MOMENTUM_LOSS", curr_close
 
-            # Max hold 15 days
+            # EXIT 4: Time exit 15 days
             if days_held >= 15:
                 return True, "TIME_EXIT", curr_close
 
