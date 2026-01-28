@@ -398,9 +398,10 @@ class BacktestEngine:
 
     def _check_rule7_signal(self, df: pd.DataFrame, idx: int) -> Tuple[bool, str]:
         """
-        Rule 7: Breakout with Volume - OPTIMIZED
-        Entry: Close > High(20) AND Volume > 2x AND Breakout >= 2% AND Base Pattern 5 days
-        Exit: TP +20%, Support-based Stop Loss, Time 15 days
+        Rule 7: Breakout with Volume - FIXED
+        Entry: Close > High(20) AND Volume > 1.5x AND Breakout >= 1%
+        Removed Base Pattern requirement (was too strict)
+        Exit: TP +10%, Support-based Stop Loss, Time 15 days
         """
         if idx < 30:
             return False, ""
@@ -413,49 +414,39 @@ class BacktestEngine:
 
         # 20-day high (excluding today)
         high_20 = high.shift(1).rolling(window=20, min_periods=20).max()
-        low_20 = low.shift(1).rolling(window=20, min_periods=20).min()
         sma_20_vol = volume.rolling(window=20, min_periods=20).mean()
 
         # Current values
         curr_close = close.iloc[idx]
         curr_open = open_price.iloc[idx]
         curr_high_20 = high_20.iloc[idx]
-        curr_low_20 = low_20.iloc[idx]
         curr_volume = volume.iloc[idx]
         curr_sma_20_vol = sma_20_vol.iloc[idx]
 
         if pd.isna(curr_high_20) or pd.isna(curr_sma_20_vol):
             return False, ""
 
-        # Volume ratio - STRICT: Volume > 2x average
+        # Volume ratio - FIXED: Volume > 1.5x average (relaxed from 2x)
         vol_ratio = curr_volume / curr_sma_20_vol if curr_sma_20_vol > 0 else 0
 
-        # Breakout percentage - STRICT: >= 2%
+        # Breakout percentage - FIXED: >= 1% (relaxed from 2%)
         breakout_pct = ((curr_close - curr_high_20) / curr_high_20 * 100) if curr_high_20 > 0 else 0
 
         # Is bullish candle
         is_bullish = curr_close > curr_open
 
-        # Check Base Pattern: Price range in last 5 days < 10% (consolidation)
-        if idx >= 5:
-            last_5_high = high.iloc[idx-5:idx].max()
-            last_5_low = low.iloc[idx-5:idx].min()
-            consolidation_range = ((last_5_high - last_5_low) / last_5_low * 100) if last_5_low > 0 else 100
-            has_base = consolidation_range < 10  # Range < 10% = consolidation
-        else:
-            has_base = False
+        # Thresholds - RELAXED for more signals
+        min_vol_ratio = 1.5    # Volume > 1.5x average (was 2x)
+        min_breakout_pct = 1.0  # Breakout >= 1% (was 2%)
 
-        # Thresholds - STRICT
-        min_vol_ratio = 2.0    # Volume > 2x average
-        min_breakout_pct = 2.0  # Breakout >= 2%
-
-        # Entry: Breakout + Volume 2x + Bullish + Breakout 2% + Base Pattern
-        if curr_close > curr_high_20 and vol_ratio >= min_vol_ratio and is_bullish and breakout_pct >= min_breakout_pct and has_base:
+        # Entry: Breakout + Volume 1.5x + Bullish + Breakout 1%
+        # Removed Base Pattern requirement (was too strict, reduced signals)
+        if curr_close > curr_high_20 and vol_ratio >= min_vol_ratio and is_bullish and breakout_pct >= min_breakout_pct:
             value = curr_close * curr_volume
             min_value = 500_000_000 if self.config.mode == 'relaxed' else 1_000_000_000
 
             if value > min_value:
-                return True, f"Breakout +{breakout_pct:.1f}%, Vol {vol_ratio:.1f}x, Base OK"
+                return True, f"Breakout +{breakout_pct:.1f}%, Vol {vol_ratio:.1f}x"
 
         return False, ""
 
@@ -601,69 +592,58 @@ class BacktestEngine:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 4: RSI-2 Mean Reversion (Larry Connors) - OPTIMIZED
-        # EXIT: Close > SMA(5) AND RSI(2) > 60 (stronger confirmation)
-        # Disaster Stop: -20%, Time: 20 days
+        # RULE 4: RSI-2 Mean Reversion (Larry Connors) - FIXED
+        # EXIT: Close > SMA(5) only (RSI > 60 removed - was cutting profits)
+        # Disaster Stop: -8%, Time: 15 days
         # ============================================================
         elif rule == 4:
             # Calculate SMA(5)
             sma_5 = close.rolling(window=5, min_periods=5).mean()
             curr_sma_5 = sma_5.iloc[idx] if idx >= 5 else None
 
-            # Calculate RSI(2) for exit confirmation
-            delta = close.diff()
-            gain = delta.where(delta > 0, 0.0)
-            loss_series = -delta.where(delta < 0, 0.0)
-            avg_gain = gain.rolling(window=2, min_periods=2).mean()
-            avg_loss = loss_series.rolling(window=2, min_periods=2).mean()
-            rs = avg_gain / avg_loss
-            rsi_2 = 100 - (100 / (1 + rs))
-            curr_rsi_2 = rsi_2.iloc[idx] if idx >= 2 else 50
-
-            # EXIT 1: Mean Reversion Complete - Close > SMA(5) AND RSI(2) > 60
-            if curr_sma_5 is not None and not pd.isna(curr_rsi_2):
-                if curr_close > curr_sma_5 and curr_rsi_2 > 60:
+            # EXIT 1: Mean Reversion Complete - Close > SMA(5) only
+            # Removed RSI > 60 condition as it was cutting MEAN_REVERSION profits in half
+            if curr_sma_5 is not None:
+                if curr_close > curr_sma_5:
                     return True, "MEAN_REVERSION", curr_close
 
-            # EXIT 2: Disaster Stop -20% (black swan protection)
-            if curr_close <= entry_price * 0.80:
+            # EXIT 2: Disaster Stop -8% (reasonable protection)
+            if curr_close <= entry_price * 0.92:
                 return True, "DISASTER_STOP", curr_close
 
-            # EXIT 3: Time exit 20 days (extended from 5)
-            if days_held >= 20:
+            # EXIT 3: Time exit 15 days
+            if days_held >= 15:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 5: Dual MA Crossover - OPTIMIZED
-        # EXIT: TP +15%, SL -8%, Breakdown < SMA50, Time 20 days
-        # NO Trailing Stop, NO Momentum Loss (removed)
+        # RULE 5: Dual MA Crossover - FIXED
+        # EXIT: TP +8% (reverted from +15%), NO Stop Loss (was killing strategy)
+        # Breakdown < SMA50, Time 20 days
         # ============================================================
         elif rule == 5:
             sma_50 = close.rolling(window=50, min_periods=50).mean()
             curr_sma_50 = sma_50.iloc[idx] if idx >= 50 else None
 
-            # EXIT 1: Take Profit +15%
-            if curr_close >= entry_price * 1.15:
+            # EXIT 1: Take Profit +8% (reverted from +15% which was too high)
+            if curr_close >= entry_price * 1.08:
                 return True, "TAKE_PROFIT", curr_close
 
-            # EXIT 2: Stop Loss -8%
-            if curr_close <= entry_price * 0.92:
-                return True, "STOP_LOSS", curr_close
-
-            # EXIT 3: Breakdown - Close below SMA50 (major trend break)
+            # EXIT 2: Breakdown - Close below SMA50 (major trend break)
+            # This replaces Stop Loss which was causing -92.5M loss
             if curr_sma_50 is not None and curr_close < curr_sma_50:
                 return True, "BREAKDOWN", curr_close
 
-            # EXIT 4: Time exit 20 days
+            # EXIT 3: Time exit 20 days
             if days_held >= 20:
                 return True, "TIME_EXIT", curr_close
 
-            # REMOVED: Trailing Stop (was causing -177M loss)
-            # REMOVED: Momentum Loss Close < SMA20 (too sensitive)
+            # REMOVED: Stop Loss -8% (was causing -92.5M loss)
+            # Strategy relies on ADX filter for entry quality instead
 
         # ============================================================
-        # RULE 6: Bollinger Band Mean Reversion - OPTIMIZED
-        # EXIT: TP +10% OR BB_Middle, Disaster Stop -8%, Time 20 days
+        # RULE 6: Bollinger Band Mean Reversion - FIXED
+        # EXIT: TP +10% OR BB_Middle, Disaster Stop -15% (widened), Time 20 days
+        # Note: Mean reversion needs wider stops to work properly
         # ============================================================
         elif rule == 6:
             # Calculate Bollinger Bands
@@ -678,8 +658,9 @@ class BacktestEngine:
             if curr_bb_middle is not None and curr_close > curr_bb_middle:
                 return True, "MEAN_REVERSION", curr_close
 
-            # EXIT 3: Disaster Stop -8% (protection)
-            if curr_close <= entry_price * 0.92:
+            # EXIT 3: Disaster Stop -15% (widened from -8% which was killing strategy)
+            # Mean reversion needs room for temporary further dips before reverting
+            if curr_close <= entry_price * 0.85:
                 return True, "DISASTER_STOP", curr_close
 
             # EXIT 4: Time exit 20 days
@@ -687,8 +668,9 @@ class BacktestEngine:
                 return True, "TIME_EXIT", curr_close
 
         # ============================================================
-        # RULE 7: Breakout with Volume - OPTIMIZED
-        # EXIT: TP +20%, Support-based Stop Loss (Breakout Level - ATR)
+        # RULE 7: Breakout with Volume - FIXED
+        # EXIT: TP +10% (reverted from +20%), Support-based Stop Loss
+        # Removed Momentum Loss (was causing -51M loss)
         # ============================================================
         elif rule == 7:
             # Calculate ATR for support-based stop
@@ -710,24 +692,19 @@ class BacktestEngine:
             # Support-based Stop Loss: Breakout Level - 1x ATR
             support_stop = breakout_level - curr_atr
 
-            # EXIT 1: Take Profit +20%
-            if curr_close >= entry_price * 1.20:
+            # EXIT 1: Take Profit +10% (reverted from +20% which was too high)
+            if curr_close >= entry_price * 1.10:
                 return True, "TAKE_PROFIT", curr_close
 
             # EXIT 2: Support-based Stop Loss
             if curr_close <= support_stop:
                 return True, "STOP_LOSS", curr_close
 
-            # EXIT 3: Momentum loss - Close < SMA(10)
-            sma_10 = close.rolling(window=10, min_periods=10).mean()
-            curr_sma_10 = sma_10.iloc[idx] if idx >= 10 else None
-
-            if curr_sma_10 is not None and curr_close < curr_sma_10:
-                return True, "MOMENTUM_LOSS", curr_close
-
-            # EXIT 4: Time exit 15 days
+            # EXIT 3: Time exit 15 days
             if days_held >= 15:
                 return True, "TIME_EXIT", curr_close
+
+            # REMOVED: Momentum Loss (Close < SMA10) was causing -51M loss
 
         # ============================================================
         # RULE 8: Three MA System (SWING TRADING OPTIMIZED)
@@ -819,19 +796,19 @@ class BacktestEngine:
             if r == 4:
                 print(f"\n📌 Rule 4: RSI-2 Mean Reversion")
                 print(f"   Entry: RSI(2) < 5, Close > SMA200")
-                print(f"   Exit: Close > SMA5 + RSI > 60, Disaster -20%, Time 20d")
+                print(f"   Exit: Close > SMA5, Disaster -8%, Time 15d")
             elif r == 5:
                 print(f"\n📌 Rule 5: Dual MA Crossover")
                 print(f"   Entry: Golden Cross, Vol 1.5x, RSI > 50, ADX > 20")
-                print(f"   Exit: TP +15%, SL -8%, Breakdown < SMA50, Time 20d")
+                print(f"   Exit: TP +8%, Breakdown < SMA50, Time 20d")
             elif r == 6:
                 print(f"\n📌 Rule 6: Bollinger Mean Reversion")
                 print(f"   Entry: Close < BB_Lower, %B < 0, RSI < 30")
-                print(f"   Exit: TP +10% or BB_Middle, Disaster -8%, Time 20d")
+                print(f"   Exit: TP +10% or BB_Middle, Disaster -15%, Time 20d")
             elif r == 7:
                 print(f"\n📌 Rule 7: Breakout Volume")
-                print(f"   Entry: Breakout 2%+, Vol 2x, Base Pattern")
-                print(f"   Exit: TP +20%, Support-based SL, Time 15d")
+                print(f"   Entry: Breakout 1%+, Vol 1.5x")
+                print(f"   Exit: TP +10%, Support-based SL, Time 15d")
 
         print(f"\n{'='*60}\n")
 

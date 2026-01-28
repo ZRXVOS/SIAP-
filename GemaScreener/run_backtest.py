@@ -216,16 +216,16 @@ Signal Detection Modes:
         has_old_rules = any(r in [1, 2, 3] for r in rules)
 
         if has_new_rules:
-            print(f"   Exit Strategy: Per-Rule (Optimized)")
+            print(f"   Exit Strategy: Per-Rule (Fixed)")
             for r in rules:
                 if r == 4:
-                    print(f"      Rule 4: Exit RSI>60 + Close>SMA5, Disaster -20%, Max 20d")
+                    print(f"      Rule 4: Exit Close>SMA5, Disaster -8%, Max 15d")
                 elif r == 5:
-                    print(f"      Rule 5: TP +15%, SL -8%, Breakdown, Max 20d")
+                    print(f"      Rule 5: TP +8%, Breakdown<SMA50, Max 20d")
                 elif r == 6:
-                    print(f"      Rule 6: TP +10% or BB_Mid, Disaster -8%, Max 20d")
+                    print(f"      Rule 6: TP +10% or BB_Mid, Disaster -15%, Max 20d")
                 elif r == 7:
-                    print(f"      Rule 7: TP +20%, Support-based SL, Max 15d")
+                    print(f"      Rule 7: TP +10%, Support-based SL, Max 15d")
         if has_old_rules:
             print(f"   TP/SL (Rules 1-3): +{config.take_profit_pct*100:.0f}% / -{config.stop_loss_pct*100:.0f}%")
             print(f"   Max Hold (Rules 1-3): {config.max_holding_days} days")
