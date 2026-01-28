@@ -132,10 +132,10 @@ def main():
     parser.add_argument("--pairs", type=str, default=None, help="Pairs (e.g., XAUUSD,EURUSD)")
     parser.add_argument("--capital", type=float, default=10_000, help="Initial capital in USD")
     parser.add_argument("--leverage", type=int, default=20, help="Leverage (e.g., 20 for 1:20)")
-    parser.add_argument("--take-profit", type=float, default=0.10, help="Take profit %")
-    parser.add_argument("--stop-loss", type=float, default=0.05, help="Stop loss %")
+    parser.add_argument("--take-profit", type=float, default=0.10, help="Take profit %%")
+    parser.add_argument("--stop-loss", type=float, default=0.05, help="Stop loss %%")
     parser.add_argument("--max-hold", type=int, default=5, help="Max holding days")
-    parser.add_argument("--position-size", type=float, default=0.30, help="Position size %")
+    parser.add_argument("--position-size", type=float, default=0.30, help="Position size %%")
     parser.add_argument("--mode", choices=['relaxed', 'strict'], default='relaxed')
     parser.add_argument("--download", action="store_true", help="Force re-download data")
 
